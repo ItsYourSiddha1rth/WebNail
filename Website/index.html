@@ -3,12 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
- <favicon img="icon16.png"></favicon>
 <title>WebNail — Turn any screenshot or page into code</title>
 <meta name="description" content="Upload a screenshot, paste a link, or select part of a live page. WebNail turns it into clean, ready-to-ship code.">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="shortcut icon" href="assets/favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script type="importmap">{ "imports": { "lenis": "https://unpkg.com/lenis@1.3.19/dist/lenis.mjs" } }</script>
+<script type="importmap">{
+  "imports": {
+    "lenis": "https://unpkg.com/lenis@1.3.19/dist/lenis.mjs",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.4"
+  }
+}</script>
 <style>
   * { margin: 0; box-sizing: border-box; }
   html { font-size: 16px; }
@@ -398,6 +406,144 @@
     font-size: 0.8rem; line-height: 1.6; color: var(--body-muted); white-space: pre-wrap; word-break: break-word;
   }
   .result-modal .rm-foot { display: flex; justify-content: flex-end; gap: 0.6rem; padding: 1rem 1.25rem; border-top: 1px solid var(--panel-line); }
+
+  /* ================= AUTH: nav account state ================= */
+  .nav-cta-area { display: flex; align-items: center; gap: 0.6rem; }
+
+  .usage-chip {
+    display: none; align-items: center; gap: 0.4rem;
+    height: 2.5rem; padding: 0 0.9rem; border-radius: 9999px;
+    border: 1px solid var(--glass-border); background: var(--glass-fill);
+    font-size: 0.78rem; color: var(--body-muted); backdrop-filter: blur(12px); white-space: nowrap;
+  }
+  @media (min-width: 640px) { .usage-chip { height: 2.75rem; font-size: 0.85rem; } }
+  .usage-chip .dot { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan); }
+  .usage-chip.unlimited .dot { background: #a4f0c4; box-shadow: 0 0 6px #a4f0c4; }
+
+  .account-btn {
+    display: none; align-items: center; gap: 0.5rem;
+    height: 2.5rem; padding: 0 0.5rem 0 0.5rem; border-radius: 9999px;
+    border: 1px solid var(--glass-border); background: var(--glass-fill);
+    color: var(--heading); font-size: 0.85rem; backdrop-filter: blur(12px);
+  }
+  @media (min-width: 640px) { .account-btn { height: 2.75rem; } }
+  .account-btn .avatar {
+    width: 1.7rem; height: 1.7rem; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-violet));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 600; color: #04050c;
+  }
+  .account-btn .acc-email { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 0.3rem; }
+
+  .account-dropdown {
+    display: none; position: absolute; top: calc(100% + 0.6rem); right: 0; z-index: 30;
+    width: 16.5rem; border-radius: 1rem; border: 1px solid var(--glass-border-strong);
+    background: rgba(10,11,20,0.96); backdrop-filter: blur(16px);
+    padding: 0.9rem; box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+  }
+  .account-dropdown.open { display: block; }
+  .account-dropdown .ad-email { font-size: 0.82rem; color: var(--heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .account-dropdown .ad-plan { margin-top: 0.2rem; font-size: 0.72rem; color: var(--body-muted); }
+  .account-dropdown .ad-divider { height: 1px; background: var(--panel-line); margin: 0.75rem 0; }
+  .account-dropdown .ad-row {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    padding: 0.55rem 0.1rem; font-size: 0.82rem; color: var(--body-muted); text-align: left;
+  }
+  .account-dropdown .ad-row:hover { color: var(--heading); }
+  .account-dropdown .ad-row.danger:hover { color: #ff9b9b; }
+
+  /* ================= AUTH: login modal ================= */
+  .auth-overlay {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    align-items: center; justify-content: center; padding: 1.25rem;
+    background: rgba(4,5,12,0.78); backdrop-filter: blur(6px);
+  }
+  .auth-overlay.open { display: flex; }
+  .auth-modal {
+    width: 24rem; max-width: 100%; border-radius: 1.5rem;
+    border: 1px solid var(--glass-border-strong); background: var(--panel-bg);
+    padding: 1.75rem; position: relative;
+  }
+  .auth-modal .am-close { position: absolute; top: 1rem; right: 1rem; font-size: 1.2rem; color: var(--body-muted); padding: 0.25rem; }
+  .auth-modal .am-close:hover { color: var(--heading); }
+  .auth-modal h3 { font-size: 1.25rem; font-weight: 500; color: var(--heading); }
+  .auth-modal .am-sub { margin-top: 0.4rem; font-size: 0.85rem; color: var(--body-muted); }
+
+  .am-google {
+    margin-top: 1.5rem; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+    height: 2.9rem; border-radius: 0.85rem; border: 1px solid var(--glass-border-strong);
+    background: rgba(255,255,255,0.06); color: var(--heading); font-size: 0.88rem; font-weight: 500;
+  }
+  .am-google:hover { background: rgba(255,255,255,0.11); }
+  .am-google svg { width: 1.1rem; height: 1.1rem; }
+
+  .am-divider { display: flex; align-items: center; gap: 0.75rem; margin: 1.1rem 0; font-size: 0.7rem; color: var(--body-muted); }
+  .am-divider::before, .am-divider::after { content: ""; flex: 1; height: 1px; background: var(--panel-line); }
+
+  .am-field { margin-bottom: 0.85rem; }
+  .am-field label { display: block; font-size: 0.76rem; color: var(--body-muted); margin-bottom: 0.4rem; }
+  .am-field input {
+    width: 100%; height: 2.75rem; border-radius: 0.75rem; border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.04); color: var(--heading); padding: 0 0.9rem; font-size: 0.88rem; outline: none;
+  }
+  .am-field input:focus { border-color: var(--accent-cyan); }
+
+  .am-submit {
+    margin-top: 0.4rem; width: 100%; height: 2.9rem; border-radius: 9999px;
+    background: var(--action-inverse); color: var(--action-inverse-fg); font-size: 0.9rem; font-weight: 500;
+  }
+  .am-submit:hover { background: rgba(255,255,255,0.85); }
+  .am-submit:disabled { opacity: 0.55; pointer-events: none; }
+
+  .am-switch { margin-top: 1.1rem; text-align: center; font-size: 0.82rem; color: var(--body-muted); }
+  .am-switch button { color: var(--accent-cyan); font-weight: 500; }
+  .am-switch button:hover { text-decoration: underline; }
+
+  .am-status { margin-top: 0.8rem; font-size: 0.78rem; min-height: 1rem; }
+  .am-status.error { color: #ff9b9b; }
+  .am-status.ok { color: #a4f0c4; }
+
+  /* ================= API / UPGRADE panel ================= */
+  .api-overlay {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    align-items: center; justify-content: center; padding: 1.25rem;
+    background: rgba(4,5,12,0.78); backdrop-filter: blur(6px);
+  }
+  .api-overlay.open { display: flex; }
+  .api-modal {
+    width: 30rem; max-width: 100%; border-radius: 1.5rem;
+    border: 1px solid var(--glass-border-strong); background: var(--panel-bg);
+    padding: 1.85rem; position: relative;
+  }
+  .api-modal .am-close { position: absolute; top: 1rem; right: 1rem; font-size: 1.2rem; color: var(--body-muted); padding: 0.25rem; }
+  .api-modal .am-close:hover { color: var(--heading); }
+  .api-modal h3 { font-size: 1.3rem; font-weight: 500; color: var(--heading); }
+  .api-modal .am-sub { margin-top: 0.4rem; font-size: 0.85rem; color: var(--body-muted); line-height: 1.55; }
+
+  .price-row {
+    margin-top: 1.4rem; display: flex; align-items: baseline; gap: 0.4rem;
+    border: 1px solid var(--panel-line); border-radius: 1rem; padding: 1.1rem 1.25rem;
+    background: rgba(255,255,255,0.03);
+  }
+  .price-row .amount { font-size: 1.9rem; font-weight: 600; color: var(--heading); }
+  .price-row .period { font-size: 0.85rem; color: var(--body-muted); }
+  .price-row .tag { margin-left: auto; font-size: 0.72rem; color: var(--accent-cyan); border: 1px solid rgba(111,227,255,0.35); border-radius: 9999px; padding: 0.25rem 0.6rem; }
+
+  .plan-features { margin-top: 1.1rem; display: flex; flex-direction: column; gap: 0.55rem; }
+  .plan-features .pf-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; color: var(--body-muted); }
+  .plan-features .pf-row svg { width: 1rem; height: 1rem; stroke: #a4f0c4; flex-shrink: 0; }
+
+  .api-key-box {
+    margin-top: 1.25rem; display: none; align-items: center; gap: 0.6rem;
+    border: 1px solid var(--glass-border); border-radius: 0.85rem; background: rgba(255,255,255,0.04);
+    padding: 0.85rem 1rem;
+  }
+  .api-key-box.show { display: flex; }
+  .api-key-box code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--accent-cyan); }
+  .api-key-box button { flex-shrink: 0; font-size: 0.75rem; color: var(--body-muted); padding: 0.3rem 0.5rem; border-radius: 0.4rem; border: 1px solid var(--glass-border); }
+  .api-key-box button:hover { color: var(--heading); }
+
+  .api-modal .am-status { margin-top: 1rem; }
 </style>
 </head>
 <body>
@@ -420,7 +566,21 @@
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </nav>
-    <a class="pill" href="#get-started">Get Started</a>
+    <div class="nav-cta-area" style="position:relative;">
+      <span class="usage-chip" id="usageChip"><span class="dot"></span><span id="usageChipText">10 free left</span></span>
+      <button class="pill" id="getStartedBtn" type="button">Get Started</button>
+      <button class="account-btn" id="accountBtn" type="button" style="display:none;">
+        <span class="avatar" id="accountAvatar">?</span>
+        <span class="acc-email" id="accountEmail"></span>
+      </button>
+      <div class="account-dropdown" id="accountDropdown">
+        <div class="ad-email" id="ddEmail"></div>
+        <div class="ad-plan" id="ddPlan">Free plan · 10 uses</div>
+        <div class="ad-divider"></div>
+        <button class="ad-row" id="ddApiBtn" type="button"><span>API &amp; billing</span><span>&rarr;</span></button>
+        <button class="ad-row danger" id="ddSignOutBtn" type="button"><span>Sign out</span></button>
+      </div>
+    </div>
   </header>
 
   <div class="center-col">
@@ -601,6 +761,71 @@
       <button class="pill-ghost" id="resultCopy" type="button">Copy code</button>
       <button class="pill" id="resultDownload" type="button">Download .html</button>
     </div>
+  </div>
+</div>
+
+<!-- auth modal -->
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-modal">
+    <button class="am-close" id="authClose" type="button">&times;</button>
+    <h3 id="authTitle">Sign in to WebNail</h3>
+    <p class="am-sub" id="authSub">10 free generations, no card required.</p>
+
+    <button class="am-google" id="googleBtn" type="button">
+      <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47c-.28 1.48-1.13 2.73-2.4 3.58v2.98h3.88c2.27-2.09 3.55-5.17 3.55-8.8z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.9l-3.88-2.99c-1.08.72-2.45 1.15-4.05 1.15-3.11 0-5.75-2.1-6.69-4.92H1.3v3.09C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.31 14.34A7.2 7.2 0 0 1 4.9 12c0-.81.14-1.6.4-2.34V6.57H1.3A11.98 11.98 0 0 0 0 12c0 1.93.46 3.76 1.3 5.43l4.01-3.09z"/><path fill="#EA4335" d="M12 4.75c1.76 0 3.35.6 4.6 1.79l3.44-3.44C17.94 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.3 6.57l4.01 3.09C6.25 6.85 8.89 4.75 12 4.75z"/></svg>
+      Continue with Google
+    </button>
+
+    <div class="am-divider">or use email</div>
+
+    <form id="authForm">
+      <div class="am-field">
+        <label for="authEmail">Email</label>
+        <input id="authEmail" type="email" required autocomplete="email" placeholder="you@example.com">
+      </div>
+      <div class="am-field">
+        <label for="authPassword">Password</label>
+        <input id="authPassword" type="password" required autocomplete="current-password" placeholder="At least 6 characters" minlength="6">
+      </div>
+      <button class="am-submit" id="authSubmit" type="submit">Sign in</button>
+    </form>
+
+    <p class="am-status" id="authStatus"></p>
+
+    <p class="am-switch" id="authSwitchWrap">
+      Don't have an account? <button type="button" id="authSwitchBtn">Sign up</button>
+    </p>
+  </div>
+</div>
+
+<!-- API / upgrade modal -->
+<div class="api-overlay" id="apiOverlay">
+  <div class="api-modal">
+    <button class="am-close" id="apiClose" type="button">&times;</button>
+    <h3>API &amp; billing</h3>
+    <p class="am-sub" id="apiSub">You get 10 free code generations. Upgrade for unlimited generations and an API key.</p>
+
+    <div class="price-row">
+      <span class="amount">$5.99</span>
+      <span class="period">/ month</span>
+      <span class="tag">Unlimited</span>
+    </div>
+
+    <div class="plan-features">
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Unlimited screenshot &amp; link generations</div>
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Personal API key for programmatic use</div>
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Priority generation queue</div>
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Cancel anytime</div>
+    </div>
+
+    <button class="am-submit" id="upgradeBtn" type="button" style="margin-top:1.4rem;">Upgrade — $5.99/mo</button>
+
+    <div class="api-key-box" id="apiKeyBox">
+      <code id="apiKeyText">wn_live_••••••••••••••••</code>
+      <button type="button" id="apiKeyCopy">Copy</button>
+    </div>
+
+    <p class="am-status" id="apiStatus"></p>
   </div>
 </div>
 
@@ -1887,9 +2112,13 @@ function wireDropzone(dz) {
 }
 wireDropzone(dropzone);
 
-uploadGenerate.addEventListener("click", () => {
+uploadGenerate.addEventListener("click", async () => {
   if (!selectedFile) return;
-  showResult(`Upload received: ${selectedFile.name}`, mockCodeFor(selectedFile.name));
+  await gatedGenerate({
+    sourceType: "upload",
+    sourceLabel: selectedFile.name,
+    onAllowed: () => showResult(`Upload received: ${selectedFile.name}`, mockCodeFor(selectedFile.name)),
+  });
 });
 
 /* ---------------- link / crawl flow ---------------- */
@@ -1958,10 +2187,15 @@ scanBtn.addEventListener("click", () => {
   }, 900);
 });
 
-linkGenerate.addEventListener("click", () => {
+linkGenerate.addEventListener("click", async () => {
   const checked = [...pageList.querySelectorAll("input[type=checkbox]:checked")]
     .map(cb => cb.closest(".page-item").querySelector(".pi-url").textContent);
-  showResult(`Generated from ${checked.length} page(s)`, mockCodeFor(checked[0] || "page"));
+  if (!checked.length) return;
+  await gatedGenerate({
+    sourceType: "link",
+    sourceLabel: checked[0],
+    onAllowed: () => showResult(`Generated from ${checked.length} page(s)`, mockCodeFor(checked[0])),
+  });
 });
 
 /* ---------------- result modal ---------------- */
@@ -2006,6 +2240,260 @@ resultDownload.addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+
+/* ================= AUTH + BILLING WIRING ================= */
+import {
+  getState,
+  onAuthStateChange,
+  signUp,
+  signIn,
+  signInWithGoogle,
+  signOut,
+  recordGeneration,
+  startUpgradeCheckout,
+  ensureApiKey,
+} from "./js/auth.js";
+
+const getStartedBtn = document.getElementById("getStartedBtn");
+const usageChip = document.getElementById("usageChip");
+const usageChipText = document.getElementById("usageChipText");
+const accountBtn = document.getElementById("accountBtn");
+const accountAvatar = document.getElementById("accountAvatar");
+const accountEmail = document.getElementById("accountEmail");
+const accountDropdown = document.getElementById("accountDropdown");
+const ddEmail = document.getElementById("ddEmail");
+const ddPlan = document.getElementById("ddPlan");
+const ddApiBtn = document.getElementById("ddApiBtn");
+const ddSignOutBtn = document.getElementById("ddSignOutBtn");
+
+const authOverlay = document.getElementById("authOverlay");
+const authClose = document.getElementById("authClose");
+const authTitle = document.getElementById("authTitle");
+const authSub = document.getElementById("authSub");
+const authForm = document.getElementById("authForm");
+const authEmail = document.getElementById("authEmail");
+const authPassword = document.getElementById("authPassword");
+const authSubmit = document.getElementById("authSubmit");
+const authStatus = document.getElementById("authStatus");
+const authSwitchBtn = document.getElementById("authSwitchBtn");
+const authSwitchWrap = document.getElementById("authSwitchWrap");
+const googleBtn = document.getElementById("googleBtn");
+
+const apiOverlay = document.getElementById("apiOverlay");
+const apiClose = document.getElementById("apiClose");
+const apiSub = document.getElementById("apiSub");
+const upgradeBtn = document.getElementById("upgradeBtn");
+const apiKeyBox = document.getElementById("apiKeyBox");
+const apiKeyText = document.getElementById("apiKeyText");
+const apiKeyCopy = document.getElementById("apiKeyCopy");
+const apiStatus = document.getElementById("apiStatus");
+
+let authMode = "signin"; // 'signin' | 'signup'
+
+function openAuthModal() {
+  authStatus.textContent = "";
+  authStatus.className = "am-status";
+  authOverlay.classList.add("open");
+  authEmail.focus();
+}
+function closeAuthModal() { authOverlay.classList.remove("open"); }
+
+authClose.addEventListener("click", closeAuthModal);
+authOverlay.addEventListener("click", (e) => { if (e.target === authOverlay) closeAuthModal(); });
+
+authSwitchBtn.addEventListener("click", () => {
+  authMode = authMode === "signin" ? "signup" : "signin";
+  if (authMode === "signup") {
+    authTitle.textContent = "Create your account";
+    authSub.textContent = "10 free generations, no card required.";
+    authSubmit.textContent = "Sign up";
+    authSwitchWrap.innerHTML = 'Already have an account? <button type="button" id="authSwitchBtn2">Sign in</button>';
+    document.getElementById("authSwitchBtn2").addEventListener("click", () => { authMode = "signin"; authSwitchBtn.click(); });
+  } else {
+    authTitle.textContent = "Sign in to WebNail";
+    authSub.textContent = "10 free generations, no card required.";
+    authSubmit.textContent = "Sign in";
+    authSwitchWrap.innerHTML = 'Don\'t have an account? <button type="button" id="authSwitchBtn">Sign up</button>';
+    document.getElementById("authSwitchBtn").addEventListener("click", () => authSwitchBtn.dispatchEvent(new Event("click")));
+  }
+});
+// re-bind after innerHTML swap on first load
+authSwitchWrap.addEventListener("click", (e) => {
+  if (e.target.id === "authSwitchBtn2" || e.target.id === "authSwitchBtn") return; // handled above
+});
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authStatus.textContent = "";
+  authStatus.className = "am-status";
+  authSubmit.disabled = true;
+  const prevLabel = authSubmit.textContent;
+  authSubmit.textContent = authMode === "signup" ? "Creating account…" : "Signing in…";
+  try {
+    if (authMode === "signup") {
+      await signUp(authEmail.value.trim(), authPassword.value);
+      authStatus.textContent = "Check your inbox to confirm your email, then sign in.";
+      authStatus.className = "am-status ok";
+    } else {
+      await signIn(authEmail.value.trim(), authPassword.value);
+      closeAuthModal();
+    }
+  } catch (err) {
+    authStatus.textContent = err.message || "Something went wrong.";
+    authStatus.className = "am-status error";
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.textContent = prevLabel;
+  }
+});
+
+googleBtn.addEventListener("click", async () => {
+  try {
+    await signInWithGoogle();
+  } catch (err) {
+    authStatus.textContent = err.message || "Google sign-in failed.";
+    authStatus.className = "am-status error";
+  }
+});
+
+getStartedBtn.addEventListener("click", openAuthModal);
+
+accountBtn.addEventListener("click", () => accountDropdown.classList.toggle("open"));
+document.addEventListener("click", (e) => {
+  if (!accountBtn.contains(e.target) && !accountDropdown.contains(e.target)) {
+    accountDropdown.classList.remove("open");
+  }
+});
+
+ddSignOutBtn.addEventListener("click", async () => {
+  await signOut();
+  accountDropdown.classList.remove("open");
+});
+
+function openApiModal() {
+  apiStatus.textContent = "";
+  apiOverlay.classList.add("open");
+  accountDropdown.classList.remove("open");
+}
+function closeApiModal() { apiOverlay.classList.remove("open"); }
+apiClose.addEventListener("click", closeApiModal);
+apiOverlay.addEventListener("click", (e) => { if (e.target === apiOverlay) closeApiModal(); });
+ddApiBtn.addEventListener("click", openApiModal);
+
+upgradeBtn.addEventListener("click", async () => {
+  apiStatus.textContent = "";
+  apiStatus.className = "am-status";
+  upgradeBtn.disabled = true;
+  upgradeBtn.textContent = "Redirecting to checkout…";
+  try {
+    await startUpgradeCheckout();
+    // browser is redirected by startUpgradeCheckout(); this line rarely runs
+  } catch (err) {
+    apiStatus.textContent = err.message || "Couldn't start checkout.";
+    apiStatus.className = "am-status error";
+    upgradeBtn.disabled = false;
+    upgradeBtn.textContent = "Upgrade — $5.99/mo";
+  }
+});
+
+apiKeyCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(apiKeyText.textContent);
+    apiKeyCopy.textContent = "Copied!";
+    setTimeout(() => (apiKeyCopy.textContent = "Copy"), 1200);
+  } catch {}
+});
+
+async function revealApiKeyIfUnlimited(profile) {
+  if (!profile?.is_unlimited) return;
+  try {
+    const key = profile.api_key || (await ensureApiKey());
+    apiKeyText.textContent = key;
+    apiKeyBox.classList.add("show");
+    upgradeBtn.style.display = "none";
+    apiSub.textContent = "You're on the unlimited plan. Here's your API key:";
+  } catch (err) {
+    console.error("Could not issue API key:", err);
+  }
+}
+
+/**
+ * Runs before any "Generate code" click. If signed out → opens the auth
+ * modal. If signed in → burns one free generation (or passes through if
+ * unlimited) via the record_generation RPC; if the free quota is spent,
+ * opens the upgrade modal instead of generating.
+ */
+async function gatedGenerate({ sourceType, sourceLabel, onAllowed }) {
+  const { session } = getState();
+  if (!session) {
+    openAuthModal();
+    return;
+  }
+  const result = await recordGeneration({ sourceType, sourceLabel });
+  if (result.allowed) {
+    onAllowed();
+    return;
+  }
+  if (result.reason === "quota_exceeded") {
+    openApiModal();
+  } else if (result.reason === "signed_out") {
+    openAuthModal();
+  } else {
+    showResult("Something went wrong", "Couldn't reach the server just now — please try again in a moment.");
+  }
+}
+
+/* Reflect auth/profile state across the header + modals whenever it changes. */
+onAuthStateChange((state) => {
+  const { session, profile, loading } = state;
+
+  if (loading) return;
+
+  if (!session) {
+    getStartedBtn.style.display = "";
+    usageChip.style.display = "none";
+    accountBtn.style.display = "none";
+    accountDropdown.classList.remove("open");
+    return;
+  }
+
+  getStartedBtn.style.display = "none";
+  accountBtn.style.display = "flex";
+
+  const email = session.user.email || "";
+  accountEmail.textContent = email;
+  accountAvatar.textContent = email.charAt(0).toUpperCase();
+  ddEmail.textContent = email;
+
+  if (profile?.is_unlimited) {
+    usageChip.style.display = "none";
+    ddPlan.textContent = "Unlimited plan";
+  } else if (profile) {
+    const remaining = Math.max(0, profile.free_generations_limit - profile.free_generations_used);
+    usageChip.style.display = "flex";
+    usageChip.classList.remove("unlimited");
+    usageChipText.textContent = `${remaining} free left`;
+    ddPlan.textContent = `Free plan · ${remaining} of ${profile.free_generations_limit} left`;
+  }
+
+  revealApiKeyIfUnlimited(profile);
+});
+
+/* Handle the ?checkout=success / canceled redirect back from Stripe. */
+(() => {
+  const params = new URLSearchParams(window.location.search);
+  const checkout = params.get("checkout");
+  if (checkout === "success") {
+    showResult("You're upgraded!", "Your account is now unlimited. Open \"API & billing\" from your account menu to grab your API key.");
+  } else if (checkout === "canceled") {
+    // no-op — user backed out of Stripe Checkout
+  }
+  if (checkout) {
+    params.delete("checkout");
+    const rest = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : ""));
+  }
+})();
 </script>
 </body>
 </html>
