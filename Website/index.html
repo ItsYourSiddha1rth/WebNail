@@ -1,1 +1,2545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebNail — Turn any screenshot or page into code</title>
+<meta name="description" content="Upload a screenshot, paste a link, or select part of a live page. WebNail turns it into clean, ready-to-ship code.">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="shortcut icon" href="assets/favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script type="importmap">{
+  "imports": {
+    "lenis": "https://unpkg.com/lenis@1.3.19/dist/lenis.mjs",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.4"
+  }
+}</script>
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  html { font-size: 16px; }
+  @media (max-width: 1920px) { html { font-size: 0.833333vw; } }
+  @media (max-width: 1440px) { html { font-size: 1.111111vw; } }
+  @media (max-width: 1024px) { html { font-size: 1.5625vw; } }
+  @media (max-width: 640px)  { html { font-size: 4.444444vw; } }
 
+  :root {
+    --hero-base:            #04050c;
+    --heading:              #eef0f6;
+    --body-muted:           #b9becf;
+    --on-media:             #ffffff;
+    --action-inverse:       #ffffff;
+    --action-inverse-fg:    #2f2f33;
+    --glass-fill:           rgba(255,255,255,0.08);
+    --glass-fill-strong:    rgba(255,255,255,0.13);
+    --glass-border:         rgba(255,255,255,0.16);
+    --glass-border-strong:  rgba(255,255,255,0.28);
+    --scrim:                rgba(4,5,12,0.46);
+    --scrim-strong:         rgba(4,5,12,0.68);
+    --scrim-soft:           rgba(4,5,12,0.12);
+    --accent-cyan:          #6fe3ff;
+    --accent-violet:        #b18bff;
+    --panel-bg:             #07080f;
+    --panel-line:           rgba(255,255,255,0.09);
+    --duration-fast:        150ms;
+    --ease-entrance:        cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  a { text-decoration: none; color: inherit; }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  body {
+    background: var(--hero-base);
+    color: var(--heading);
+    overflow-x: hidden;
+    font-family: "Onest", sans-serif;
+  }
+
+  /* ---------- shared pill button ---------- */
+  .pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 2.5rem; border-radius: 9999px;
+    background: var(--action-inverse); padding: 0 1.125rem;
+    font-size: 0.85rem; font-weight: 500; color: var(--action-inverse-fg);
+    box-shadow: 0 1px 2px rgba(0,0,0,.05);
+    transition: background var(--duration-fast) var(--ease-entrance);
+    white-space: nowrap;
+  }
+  .pill:hover { background: rgba(255,255,255,0.85); }
+  .pill:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(255,255,255,.7); }
+  @media (min-width: 640px) { .pill { height: 2.75rem; padding: 0 1.375rem; font-size: 0.95rem; } }
+
+  .pill-ghost {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 2.5rem; border-radius: 9999px;
+    border: 1px solid var(--glass-border-strong); background: var(--glass-fill);
+    padding: 0 1.125rem; font-size: 0.85rem; font-weight: 500; color: var(--heading);
+    backdrop-filter: blur(12px);
+    transition: background var(--duration-fast) var(--ease-entrance), border-color var(--duration-fast) var(--ease-entrance);
+    white-space: nowrap;
+  }
+  .pill-ghost:hover { background: var(--glass-fill-strong); border-color: rgba(255,255,255,0.4); }
+  @media (min-width: 640px) { .pill-ghost { height: 2.75rem; padding: 0 1.375rem; font-size: 0.95rem; } }
+
+  /* ================= HERO ================= */
+  .hero {
+    position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100lvh; width: 100vw; overflow: hidden;
+    background: var(--hero-base); text-align: center;
+    padding: 0 1.25rem;
+  }
+  @media (min-width: 640px) { .hero { padding: 0 2.5rem; } }
+
+  .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+
+  .scrim {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(115% 95% at 50% 46%,
+      var(--scrim-strong) 0%, var(--scrim-strong) 24%, var(--scrim) 52%, var(--scrim-soft) 100%);
+  }
+
+  header.nav {
+    position: absolute; inset-inline: 0; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.25rem;
+    opacity: 0; transform: translateY(-0.75rem);
+    transition: opacity 700ms var(--ease-entrance), transform 700ms var(--ease-entrance);
+  }
+  @media (min-width: 640px) { header.nav { padding: 1.75rem 2.5rem; } }
+  header.nav.in { opacity: 1; transform: translateY(0); }
+
+  .brand {
+    display: flex; align-items: center; gap: 0.6rem; font-weight: 500;
+    font-size: 1.15rem; color: var(--on-media); letter-spacing: -0.01em;
+  }
+  @media (min-width: 640px) { .brand { font-size: 1.375rem; } }
+  .brand svg { width: 1.35rem; height: 1.35rem; stroke: currentColor; }
+  @media (min-width: 640px) { .brand svg { width: 1.5rem; height: 1.5rem; } }
+
+  .nav-pill {
+    display: none;
+    position: absolute; left: 50%; transform: translateX(-50%);
+    height: 3rem; align-items: center; gap: 2.25rem;
+    border-radius: 9999px; border: 1px solid var(--glass-border);
+    background: var(--glass-fill); padding: 0 1.75rem; backdrop-filter: blur(12px);
+  }
+  @media (min-width: 640px) { .nav-pill { display: flex; } }
+  .nav-pill a {
+    font-size: 0.95rem; color: var(--body-muted); white-space: nowrap;
+    transition: color var(--duration-fast) var(--ease-entrance);
+  }
+  .nav-pill a:hover { color: var(--heading); }
+
+  .center-col {
+    position: relative; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; width: 100%; max-width: 22rem;
+  }
+  @media (min-width: 640px) { .center-col { max-width: 40rem; } }
+  @media (min-width: 1024px) { .center-col { max-width: 56rem; } }
+
+  .badge {
+    display: inline-flex; align-items: center; border-radius: 9999px;
+    border: 1px solid var(--glass-border); background: var(--glass-fill);
+    padding: 0.4rem 0.875rem; font-size: 0.72rem; color: var(--body-muted);
+    backdrop-filter: blur(12px);
+    opacity: 0; transform: translateY(1.25rem);
+    transition: opacity 700ms var(--ease-entrance), transform 700ms var(--ease-entrance);
+  }
+  @media (min-width: 640px) { .badge { font-size: 0.8rem; } }
+  .badge.in { opacity: 1; transform: translateY(0); }
+  .badge .dot { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--accent-cyan); margin-right: 0.5rem; box-shadow: 0 0 8px var(--accent-cyan); }
+
+  h1.headline {
+    margin-top: 1.25rem; max-width: 20rem;
+    font-size: 2rem; font-weight: 500; line-height: 1.1; letter-spacing: -0.02em;
+    color: var(--heading); text-align: center;
+  }
+  @media (min-width: 640px) { h1.headline { margin-top: 1.75rem; max-width: 34rem; font-size: 3.3rem; } }
+  @media (min-width: 1024px) { h1.headline { max-width: 50rem; font-size: 4.6rem; } }
+  h1.headline .word { display: inline-block; opacity: 0; transform: translateY(26px); transition: opacity 720ms cubic-bezier(0.33,1,0.68,1), transform 720ms cubic-bezier(0.33,1,0.68,1); }
+  h1.headline .word.in { opacity: 1; transform: translateY(0); }
+
+  p.sub {
+    margin-top: 1rem; max-width: 20rem;
+    font-size: 1rem; line-height: 1.5; color: var(--body-muted);
+  }
+  @media (min-width: 640px) { p.sub { margin-top: 1.25rem; max-width: 30rem; font-size: 1.1rem; } }
+  @media (min-width: 1024px) { p.sub { max-width: 38rem; font-size: 1.2rem; } }
+  p.sub .word { display: inline-block; opacity: 0; transform: translateY(14px); transition: opacity 600ms cubic-bezier(0.33,1,0.68,1), transform 600ms cubic-bezier(0.33,1,0.68,1); }
+  p.sub .word.in { opacity: 1; transform: translateY(0); }
+
+  /* input panel (replaces the waitlist form) */
+  .input-panel-wrap {
+    margin-top: 1.75rem; display: flex; justify-content: center; width: 100%;
+    opacity: 0; transform: translateY(1.25rem);
+    transition: opacity 700ms var(--ease-entrance), transform 700ms var(--ease-entrance);
+  }
+  @media (min-width: 640px) { .input-panel-wrap { margin-top: 2.5rem; } }
+  .input-panel-wrap.in { opacity: 1; transform: translateY(0); }
+
+  .input-panel {
+    width: 42rem; max-width: 100%;
+    border-radius: 1.5rem; border: 1px solid var(--glass-border);
+    background: var(--glass-fill); backdrop-filter: blur(16px);
+    box-shadow: 0 1px 2px rgba(0,0,0,.05);
+    padding: 0.4rem;
+  }
+
+  .mode-toggle {
+    display: flex; gap: 0.25rem; padding: 0.35rem; margin-bottom: 0.1rem;
+  }
+  .mode-btn {
+    flex: 1; padding: 0.6rem 0.5rem; border-radius: 0.9rem;
+    font-size: 0.8rem; font-weight: 500; color: var(--body-muted);
+    transition: background var(--duration-fast) var(--ease-entrance), color var(--duration-fast) var(--ease-entrance);
+  }
+  @media (min-width: 640px) { .mode-btn { font-size: 0.9rem; padding: 0.65rem 0.5rem; } }
+  .mode-btn.active { background: var(--glass-fill-strong); color: var(--heading); }
+
+  .format-chip {
+    padding: 0.3rem 0.7rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 500;
+    color: var(--body-muted); border: 1px solid var(--glass-border);
+    background: transparent; cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-entrance), color var(--duration-fast) var(--ease-entrance);
+  }
+  .format-chip.active { background: var(--glass-fill-strong); color: var(--heading); border-color: var(--glass-border-strong); }
+
+  .mode-body { padding: 0.75rem 1rem 1rem; }
+
+  .dropzone {
+    border: 1.5px dashed var(--glass-border-strong); border-radius: 1.1rem;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.6rem; padding: 2rem 1rem; cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-entrance), background var(--duration-fast) var(--ease-entrance);
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent-cyan); background: rgba(111,227,255,0.06); }
+  .dropzone svg { width: 1.6rem; height: 1.6rem; stroke: var(--body-muted); }
+  .dropzone .dz-title { font-size: 0.95rem; font-weight: 500; color: var(--heading); }
+  .dropzone .dz-sub { font-size: 0.78rem; color: var(--body-muted); }
+  .dropzone input[type="file"] { display: none; }
+
+  .file-chip {
+    display: flex; align-items: center; gap: 0.75rem;
+    border: 1px solid var(--glass-border); border-radius: 1rem;
+    padding: 0.7rem 0.9rem; background: rgba(255,255,255,0.04);
+  }
+  .file-chip img { width: 2.75rem; height: 2.75rem; object-fit: cover; border-radius: 0.5rem; flex-shrink: 0; }
+  .file-chip .fc-name { font-size: 0.85rem; color: var(--heading); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-chip .fc-size { font-size: 0.72rem; color: var(--body-muted); text-align: left; }
+  .file-chip .fc-remove { margin-left: auto; color: var(--body-muted); font-size: 1.1rem; line-height: 1; padding: 0.25rem; flex-shrink: 0; }
+  .file-chip .fc-remove:hover { color: var(--heading); }
+
+  .link-row {
+    display: flex; align-items: center; height: 3.25rem;
+    border-radius: 9999px; border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.04);
+    padding-left: 1.1rem; padding-right: 0.35rem;
+  }
+  @media (min-width: 640px) { .link-row { height: 3.5rem; padding-left: 1.35rem; } }
+  .link-row input {
+    flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--heading);
+    font-size: 0.88rem; border: none; outline: none;
+  }
+  @media (min-width: 640px) { .link-row input { font-size: 1rem; } }
+  .link-row input::placeholder { color: var(--body-muted); }
+
+  .scan-status { margin-top: 0.85rem; font-size: 0.78rem; color: var(--body-muted); text-align: left; min-height: 1.1rem; }
+
+  .page-list { margin-top: 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; max-height: 11rem; overflow-y: auto; }
+  .page-item {
+    display: flex; align-items: center; gap: 0.65rem;
+    border: 1px solid var(--glass-border); border-radius: 0.7rem;
+    padding: 0.55rem 0.75rem; text-align: left; background: rgba(255,255,255,0.03);
+  }
+  .page-item input[type="checkbox"] { accent-color: var(--accent-cyan); width: 1rem; height: 1rem; flex-shrink: 0; }
+  .page-item .pi-url { font-size: 0.8rem; color: var(--heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-item .pi-title { font-size: 0.7rem; color: var(--body-muted); }
+
+  .panel-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 0.9rem; gap: 0.75rem; }
+  .panel-footer .hint { font-size: 0.72rem; color: var(--body-muted); text-align: left; }
+  .panel-footer .pill { flex-shrink: 0; }
+  .panel-footer .pill[disabled] { opacity: 0.4; pointer-events: none; }
+
+  footer.hero-footer {
+    position: absolute; inset-inline: 0; bottom: 0; z-index: 20;
+    display: flex; justify-content: center; padding: 1.25rem;
+    font-size: 0.72rem; color: var(--body-muted);
+    opacity: 0; transform: translateY(1.25rem);
+    transition: opacity 700ms var(--ease-entrance), transform 700ms var(--ease-entrance);
+  }
+  @media (min-width: 640px) { footer.hero-footer { padding: 1.5rem 2.5rem; font-size: 0.8rem; } }
+  footer.hero-footer.in { opacity: 1; transform: translateY(0); }
+
+  /* ================= HOW IT WORKS ================= */
+  .section { position: relative; padding: 6rem 1.25rem; background: var(--hero-base); }
+  @media (min-width: 640px) { .section { padding: 8rem 2.5rem; } }
+  .section-inner { max-width: 68rem; margin: 0 auto; }
+
+  .eyebrow { font-size: 0.78rem; color: var(--accent-cyan); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+  .section h2 { margin-top: 0.75rem; font-size: 1.8rem; font-weight: 500; letter-spacing: -0.02em; color: var(--heading); max-width: 34rem; line-height: 1.15; }
+  @media (min-width: 640px) { .section h2 { font-size: 2.6rem; } }
+  .section p.lead { margin-top: 1rem; max-width: 32rem; font-size: 1rem; line-height: 1.6; color: var(--body-muted); }
+
+  .steps { margin-top: 3.5rem; display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+  @media (min-width: 640px) { .steps { grid-template-columns: repeat(3, 1fr); gap: 1.5rem; } }
+  .step-card {
+    border: 1px solid var(--panel-line); border-radius: 1.25rem; background: var(--panel-bg);
+    padding: 1.75rem; position: relative; overflow: hidden;
+  }
+  .step-card .step-num { font-size: 0.78rem; color: var(--accent-cyan); font-weight: 600; letter-spacing: 0.04em; }
+  .step-card h3 { margin-top: 0.9rem; font-size: 1.15rem; font-weight: 500; color: var(--heading); }
+  .step-card p { margin-top: 0.6rem; font-size: 0.88rem; line-height: 1.55; color: var(--body-muted); }
+  .step-card .glow {
+    position: absolute; width: 10rem; height: 10rem; border-radius: 50%; filter: blur(3rem);
+    background: radial-gradient(circle, var(--accent-cyan) 0%, transparent 70%);
+    opacity: 0.12; top: -3rem; right: -3rem; pointer-events: none;
+  }
+
+  /* ================= CODE PREVIEW ================= */
+  .preview-grid { margin-top: 4rem; display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+  @media (min-width: 900px) { .preview-grid { grid-template-columns: 1fr 1fr; align-items: stretch; } }
+
+  .mock-shot {
+    border-radius: 1.25rem; border: 1px solid var(--panel-line); background: var(--panel-bg);
+    overflow: hidden; display: flex; flex-direction: column; min-height: 20rem;
+  }
+  .mock-shot .titlebar { display: flex; align-items: center; gap: 0.4rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--panel-line); }
+  .mock-shot .titlebar .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .mock-shot .titlebar .label { margin-left: 0.5rem; font-size: 0.7rem; color: var(--body-muted); }
+  .mock-shot .shot-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+    background:
+      radial-gradient(60% 60% at 30% 25%, rgba(111,227,255,0.14), transparent 70%),
+      radial-gradient(50% 55% at 75% 70%, rgba(177,139,255,0.14), transparent 70%);
+  }
+  .mock-shot .shot-body .frame { width: 100%; max-width: 22rem; border-radius: 0.9rem; border: 1px solid var(--panel-line); background: rgba(255,255,255,0.03); padding: 1.1rem; }
+  .mock-shot .frame .fbar { width: 40%; height: 0.6rem; border-radius: 0.3rem; background: rgba(255,255,255,0.14); margin-bottom: 0.9rem; }
+  .mock-shot .frame .fline { height: 0.5rem; border-radius: 0.25rem; background: rgba(255,255,255,0.08); margin-bottom: 0.55rem; }
+  .mock-shot .frame .fline:nth-child(3) { width: 90%; }
+  .mock-shot .frame .fline:nth-child(4) { width: 70%; }
+  .mock-shot .frame .fbtn { margin-top: 0.9rem; width: 6rem; height: 1.5rem; border-radius: 9999px; background: rgba(111,227,255,0.35); }
+
+  .mock-code {
+    border-radius: 1.25rem; border: 1px solid var(--panel-line); background: var(--panel-bg);
+    overflow: hidden; display: flex; flex-direction: column; min-height: 20rem;
+  }
+  .mock-code .titlebar { display: flex; align-items: center; gap: 0.4rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--panel-line); }
+  .mock-code .titlebar .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .mock-code .titlebar .label { margin-left: 0.5rem; font-size: 0.7rem; color: var(--body-muted); }
+  .mock-code pre {
+    flex: 1; margin: 0; padding: 1.25rem; overflow: auto;
+    font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.76rem; line-height: 1.65; color: var(--body-muted);
+  }
+  .mock-code .tk-tag { color: var(--accent-violet); }
+  .mock-code .tk-attr { color: var(--accent-cyan); }
+  .mock-code .tk-str { color: #a4f0c4; }
+  .mock-code .tk-com { color: rgba(255,255,255,0.3); }
+
+  /* ================= FOUNDER ================= */
+  .founder-wrap {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1.75rem;
+    border: 1px solid var(--panel-line); border-radius: 1.5rem; background: var(--panel-bg);
+    padding: 2.25rem; position: relative; overflow: hidden;
+  }
+  @media (min-width: 720px) { .founder-wrap { flex-direction: row; align-items: center; padding: 3rem; } }
+
+  .founder-mark {
+    width: 4.5rem; height: 4.5rem; flex-shrink: 0; border-radius: 1.1rem;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--glass-fill); border: 1px solid var(--glass-border-strong);
+    color: var(--accent-cyan);
+  }
+  .founder-mark svg { width: 2.1rem; height: 2.1rem; }
+
+  .founder-copy .lead { max-width: 34rem; }
+  .founder-name {
+    margin-top: 1.25rem; font-size: 1rem; font-weight: 500; color: var(--heading);
+  }
+  .founder-name span { font-weight: 400; color: var(--body-muted); }
+
+  /* ================= FOOTER ================= */
+  .site-footer { padding: 3rem 1.25rem; border-top: 1px solid var(--panel-line); }
+  @media (min-width: 640px) { .site-footer { padding: 3rem 2.5rem; } }
+  .site-footer .sf-inner { max-width: 68rem; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+  .site-footer .brand { font-size: 1rem; }
+  .site-footer .sf-links { display: flex; gap: 1.5rem; font-size: 0.82rem; color: var(--body-muted); }
+  .site-footer .sf-links a:hover { color: var(--heading); }
+  .site-footer .sf-copy { font-size: 0.75rem; color: var(--body-muted); width: 100%; margin-top: 1rem; }
+
+  /* modal for generated result */
+  .result-overlay {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center; padding: 1.25rem;
+    background: rgba(4,5,12,0.75); backdrop-filter: blur(6px);
+  }
+  .result-overlay.open { display: flex; }
+  .result-modal {
+    width: 46rem; max-width: 100%; max-height: 85vh; display: flex; flex-direction: column;
+    border-radius: 1.25rem; border: 1px solid var(--glass-border-strong); background: var(--panel-bg);
+    overflow: hidden;
+  }
+  .result-modal .rm-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--panel-line); }
+  .result-modal .rm-head h4 { font-size: 0.95rem; font-weight: 500; color: var(--heading); }
+  .result-modal .rm-close { font-size: 1.2rem; color: var(--body-muted); padding: 0.25rem; }
+  .result-modal .rm-close:hover { color: var(--heading); }
+  .result-modal pre {
+    flex: 1; margin: 0; padding: 1.25rem; overflow: auto;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.8rem; line-height: 1.6; color: var(--body-muted); white-space: pre-wrap; word-break: break-word;
+  }
+  .result-modal .rm-foot { display: flex; justify-content: flex-end; gap: 0.6rem; padding: 1rem 1.25rem; border-top: 1px solid var(--panel-line); }
+
+  /* ================= AUTH: nav account state ================= */
+  .nav-cta-area { display: flex; align-items: center; gap: 0.6rem; }
+
+  .usage-chip {
+    display: none; align-items: center; gap: 0.4rem;
+    height: 2.5rem; padding: 0 0.9rem; border-radius: 9999px;
+    border: 1px solid var(--glass-border); background: var(--glass-fill);
+    font-size: 0.78rem; color: var(--body-muted); backdrop-filter: blur(12px); white-space: nowrap;
+  }
+  @media (min-width: 640px) { .usage-chip { height: 2.75rem; font-size: 0.85rem; } }
+  .usage-chip .dot { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan); }
+  .usage-chip.unlimited .dot { background: #a4f0c4; box-shadow: 0 0 6px #a4f0c4; }
+
+  .account-btn {
+    display: none; align-items: center; gap: 0.5rem;
+    height: 2.5rem; padding: 0 0.5rem 0 0.5rem; border-radius: 9999px;
+    border: 1px solid var(--glass-border); background: var(--glass-fill);
+    color: var(--heading); font-size: 0.85rem; backdrop-filter: blur(12px);
+  }
+  @media (min-width: 640px) { .account-btn { height: 2.75rem; } }
+  .account-btn .avatar {
+    width: 1.7rem; height: 1.7rem; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-violet));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 600; color: #04050c;
+  }
+  .account-btn .acc-email { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 0.3rem; }
+
+  .account-dropdown {
+    display: none; position: absolute; top: calc(100% + 0.6rem); right: 0; z-index: 30;
+    width: 16.5rem; border-radius: 1rem; border: 1px solid var(--glass-border-strong);
+    background: rgba(10,11,20,0.96); backdrop-filter: blur(16px);
+    padding: 0.9rem; box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+  }
+  .account-dropdown.open { display: block; }
+  .account-dropdown .ad-email { font-size: 0.82rem; color: var(--heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .account-dropdown .ad-plan { margin-top: 0.2rem; font-size: 0.72rem; color: var(--body-muted); }
+  .account-dropdown .ad-divider { height: 1px; background: var(--panel-line); margin: 0.75rem 0; }
+  .account-dropdown .ad-row {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    padding: 0.55rem 0.1rem; font-size: 0.82rem; color: var(--body-muted); text-align: left;
+  }
+  .account-dropdown .ad-row:hover { color: var(--heading); }
+  .account-dropdown .ad-row.danger:hover { color: #ff9b9b; }
+
+  /* ================= AUTH: login modal ================= */
+  .auth-overlay {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    align-items: center; justify-content: center; padding: 1.25rem;
+    background: rgba(4,5,12,0.78); backdrop-filter: blur(6px);
+  }
+  .auth-overlay.open { display: flex; }
+  .auth-modal {
+    width: 24rem; max-width: 100%; border-radius: 1.5rem;
+    border: 1px solid var(--glass-border-strong); background: var(--panel-bg);
+    padding: 1.75rem; position: relative;
+  }
+  .auth-modal .am-close { position: absolute; top: 1rem; right: 1rem; font-size: 1.2rem; color: var(--body-muted); padding: 0.25rem; }
+  .auth-modal .am-close:hover { color: var(--heading); }
+  .auth-modal h3 { font-size: 1.25rem; font-weight: 500; color: var(--heading); }
+  .auth-modal .am-sub { margin-top: 0.4rem; font-size: 0.85rem; color: var(--body-muted); }
+
+  .am-google {
+    margin-top: 1.5rem; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+    height: 2.9rem; border-radius: 0.85rem; border: 1px solid var(--glass-border-strong);
+    background: rgba(255,255,255,0.06); color: var(--heading); font-size: 0.88rem; font-weight: 500;
+  }
+  .am-google:hover { background: rgba(255,255,255,0.11); }
+  .am-google svg { width: 1.1rem; height: 1.1rem; }
+
+  .am-divider { display: flex; align-items: center; gap: 0.75rem; margin: 1.1rem 0; font-size: 0.7rem; color: var(--body-muted); }
+  .am-divider::before, .am-divider::after { content: ""; flex: 1; height: 1px; background: var(--panel-line); }
+
+  .am-field { margin-bottom: 0.85rem; }
+  .am-field label { display: block; font-size: 0.76rem; color: var(--body-muted); margin-bottom: 0.4rem; }
+  .am-field input {
+    width: 100%; height: 2.75rem; border-radius: 0.75rem; border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.04); color: var(--heading); padding: 0 0.9rem; font-size: 0.88rem; outline: none;
+  }
+  .am-field input:focus { border-color: var(--accent-cyan); }
+
+  .am-submit {
+    margin-top: 0.4rem; width: 100%; height: 2.9rem; border-radius: 9999px;
+    background: var(--action-inverse); color: var(--action-inverse-fg); font-size: 0.9rem; font-weight: 500;
+  }
+  .am-submit:hover { background: rgba(255,255,255,0.85); }
+  .am-submit:disabled { opacity: 0.55; pointer-events: none; }
+
+  .am-switch { margin-top: 1.1rem; text-align: center; font-size: 0.82rem; color: var(--body-muted); }
+  .am-switch button { color: var(--accent-cyan); font-weight: 500; }
+  .am-switch button:hover { text-decoration: underline; }
+
+  .am-status { margin-top: 0.8rem; font-size: 0.78rem; min-height: 1rem; }
+  .am-status.error { color: #ff9b9b; }
+  .am-status.ok { color: #a4f0c4; }
+
+  /* ================= API / UPGRADE panel ================= */
+  .api-overlay {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    align-items: center; justify-content: center; padding: 1.25rem;
+    background: rgba(4,5,12,0.78); backdrop-filter: blur(6px);
+  }
+  .api-overlay.open { display: flex; }
+  .api-modal {
+    width: 30rem; max-width: 100%; border-radius: 1.5rem;
+    border: 1px solid var(--glass-border-strong); background: var(--panel-bg);
+    padding: 1.85rem; position: relative;
+  }
+  .api-modal .am-close { position: absolute; top: 1rem; right: 1rem; font-size: 1.2rem; color: var(--body-muted); padding: 0.25rem; }
+  .api-modal .am-close:hover { color: var(--heading); }
+  .api-modal h3 { font-size: 1.3rem; font-weight: 500; color: var(--heading); }
+  .api-modal .am-sub { margin-top: 0.4rem; font-size: 0.85rem; color: var(--body-muted); line-height: 1.55; }
+
+  .price-row {
+    margin-top: 1.4rem; display: flex; align-items: baseline; gap: 0.4rem;
+    border: 1px solid var(--panel-line); border-radius: 1rem; padding: 1.1rem 1.25rem;
+    background: rgba(255,255,255,0.03);
+  }
+  .price-row .amount { font-size: 1.9rem; font-weight: 600; color: var(--heading); }
+  .price-row .period { font-size: 0.85rem; color: var(--body-muted); }
+  .price-row .tag { margin-left: auto; font-size: 0.72rem; color: var(--accent-cyan); border: 1px solid rgba(111,227,255,0.35); border-radius: 9999px; padding: 0.25rem 0.6rem; }
+
+  .plan-features { margin-top: 1.1rem; display: flex; flex-direction: column; gap: 0.55rem; }
+  .plan-features .pf-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; color: var(--body-muted); }
+  .plan-features .pf-row svg { width: 1rem; height: 1rem; stroke: #a4f0c4; flex-shrink: 0; }
+
+  .api-key-box {
+    margin-top: 1.25rem; display: none; align-items: center; gap: 0.6rem;
+    border: 1px solid var(--glass-border); border-radius: 0.85rem; background: rgba(255,255,255,0.04);
+    padding: 0.85rem 1rem;
+  }
+  .api-key-box.show { display: flex; }
+  .api-key-box code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--accent-cyan); }
+  .api-key-box button { flex-shrink: 0; font-size: 0.75rem; color: var(--body-muted); padding: 0.3rem 0.5rem; border-radius: 0.4rem; border: 1px solid var(--glass-border); }
+  .api-key-box button:hover { color: var(--heading); }
+
+  .api-modal .am-status { margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <canvas aria-hidden="true"></canvas>
+  <div class="scrim" aria-hidden="true"></div>
+
+  <header class="nav" id="nav">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M2.5 9c2.5 0 2.5 4.2 5 4.2S10 9 12 9s2.5 4.2 5 4.2S19.5 9 21.5 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M2.5 15c2.5 0 2.5 4.2 5 4.2S10 15 12 15s2.5 4.2 5 4.2S19.5 15 21.5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.5"/>
+      </svg>
+      WebNail
+    </a>
+    <nav class="nav-pill">
+      <a href="#how-it-works">How it works</a>
+      <a href="#founder">Founder</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta-area" style="position:relative;">
+      <span class="usage-chip" id="usageChip"><span class="dot"></span><span id="usageChipText">10 free left</span></span>
+      <button class="pill" id="getStartedBtn" type="button">Get Started</button>
+      <button class="account-btn" id="accountBtn" type="button" style="display:none;">
+        <span class="avatar" id="accountAvatar">?</span>
+        <span class="acc-email" id="accountEmail"></span>
+      </button>
+      <div class="account-dropdown" id="accountDropdown">
+        <div class="ad-email" id="ddEmail"></div>
+        <div class="ad-plan" id="ddPlan">Free plan · 10 uses</div>
+        <div class="ad-divider"></div>
+        <button class="ad-row" id="ddApiBtn" type="button"><span>API &amp; billing</span><span>&rarr;</span></button>
+        <button class="ad-row danger" id="ddSignOutBtn" type="button"><span>Sign out</span></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="center-col">
+    <p class="badge" id="badge"><span class="dot"></span>Pixels in, code out</p>
+
+    <h1 class="headline" id="headline">Screenshot to Code, Nailed Every Time</h1>
+
+    <p class="sub" id="sub">Drop a screenshot, paste a link, or select any part of a live page — WebNail turns it into clean, ready-to-ship code in seconds.</p>
+
+    <div class="input-panel-wrap" id="panelWrap">
+      <div class="input-panel">
+        <div class="mode-toggle">
+          <button class="mode-btn active" data-mode="upload" type="button">Upload screenshot</button>
+          <button class="mode-btn" data-mode="link" type="button">Paste a link</button>
+        </div>
+
+        <div class="format-toggle" style="display:flex; gap:0.4rem; padding:0 1rem 0.5rem;">
+          <span style="font-size:0.72rem; color:var(--body-muted); align-self:center; margin-right:0.25rem;">Output:</span>
+          <button class="format-chip active" data-format="html" type="button">HTML/CSS</button>
+          <button class="format-chip" data-format="react" type="button">React</button>
+        </div>
+
+        <!-- UPLOAD MODE -->
+        <div class="mode-body" data-panel="upload">
+          <label class="dropzone" id="dropzone">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <span class="dz-title">Drop a screenshot, or click to browse</span>
+            <span class="dz-sub">PNG, JPG, or WebP — up to 20MB</span>
+            <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp">
+          </label>
+          <div class="panel-footer">
+            <span class="hint">Full page or a single component both work.</span>
+            <button class="pill" id="uploadGenerate" disabled type="button">Generate code</button>
+          </div>
+        </div>
+
+        <!-- LINK MODE -->
+        <div class="mode-body" data-panel="link" style="display:none;">
+          <div class="link-row">
+            <input id="linkInput" type="url" placeholder="https://your-site.com" inputmode="url">
+            <button class="pill" id="scanBtn" type="button">Scan site</button>
+          </div>
+          <p class="scan-status" id="scanStatus"></p>
+          <div class="page-list" id="pageList"></div>
+          <div class="panel-footer" id="linkFooter" style="display:none;">
+            <span class="hint" id="linkHint">Select the pages you want.</span>
+            <button class="pill" id="linkGenerate" disabled type="button">Generate code</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="hero-footer" id="footer">© 2026 WebNail — pixels in, code out.</footer>
+</section>
+
+<!-- ============ HOW IT WORKS ============ -->
+<section class="section" id="how-it-works">
+  <div class="section-inner">
+    <p class="eyebrow">How it works</p>
+    <h2>Three ways in, one clean export.</h2>
+    <p class="lead">However the design reaches you — a screenshot in your downloads, a link to a live site, or a single component you want to lift — WebNail reads the pixels and writes the markup.</p>
+
+    <div class="steps">
+      <div class="step-card">
+        <div class="glow"></div>
+        <p class="step-num">01 — Capture</p>
+        <h3>Upload, link, or select</h3>
+        <p>Drag in a screenshot, or paste a URL and pick the pages you want — WebNail reads the layout and hands back real code.</p>
+      </div>
+      <div class="step-card">
+        <div class="glow"></div>
+        <p class="step-num">02 — Read</p>
+        <h3>Layout gets understood</h3>
+        <p>WebNail maps spacing, type, color, and structure from the image or DOM — not a guess at what it might be, but what's actually there, pixel for pixel.</p>
+      </div>
+      <div class="step-card">
+        <div class="glow"></div>
+        <p class="step-num">03 — Ship</p>
+        <h3>Get real, editable code</h3>
+        <p>Clean HTML/CSS or React comes back, ready to drop into a project, tweak, or hand to a teammate — no proprietary format to fight with.</p>
+      </div>
+    </div>
+
+    <div class="preview-grid">
+      <div class="mock-shot">
+        <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">selection.png</span></div>
+        <div class="shot-body">
+          <div class="frame">
+            <div class="fbar"></div>
+            <div class="fline"></div>
+            <div class="fline"></div>
+            <div class="fline"></div>
+            <div class="fbtn"></div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-code">
+        <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">output.html</span></div>
+        <pre><span class="tk-com">&lt;!-- generated by WebNail --&gt;</span>
+<span class="tk-tag">&lt;section</span> <span class="tk-attr">class</span>=<span class="tk-str">"card"</span><span class="tk-tag">&gt;</span>
+  <span class="tk-tag">&lt;h2&gt;</span>Ready when you are<span class="tk-tag">&lt;/h2&gt;</span>
+  <span class="tk-tag">&lt;p&gt;</span>Cut through the noise.<span class="tk-tag">&lt;/p&gt;</span>
+  <span class="tk-tag">&lt;button</span> <span class="tk-attr">class</span>=<span class="tk-str">"pill"</span><span class="tk-tag">&gt;</span>
+    Get Started
+  <span class="tk-tag">&lt;/button&gt;</span>
+<span class="tk-tag">&lt;/section&gt;</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOUNDER ============ -->
+<section class="section" id="founder" style="padding-top:0;">
+  <div class="section-inner">
+    <div class="founder-wrap">
+      <div class="founder-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M2.5 9c2.5 0 2.5 4.2 5 4.2S10 9 12 9s2.5 4.2 5 4.2S19.5 9 21.5 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M2.5 15c2.5 0 2.5 4.2 5 4.2S10 15 12 15s2.5 4.2 5 4.2S19.5 15 21.5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.5"/>
+        </svg>
+      </div>
+      <div class="founder-copy">
+        <p class="eyebrow">Who's behind this</p>
+        <h2>Built by one person, on purpose.</h2>
+        <p class="lead">WebNail is built and run by Siddharth Pathak — Founder &amp; Developer. No committee, no roadmap by focus group: just someone who wanted screenshots to turn into real code without the busywork.</p>
+        <p class="founder-name">Siddharth Pathak <span>— Founder &amp; Developer</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="sf-inner">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width:1.35rem;height:1.35rem;">
+        <path d="M2.5 9c2.5 0 2.5 4.2 5 4.2S10 9 12 9s2.5 4.2 5 4.2S19.5 9 21.5 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M2.5 15c2.5 0 2.5 4.2 5 4.2S10 15 12 15s2.5 4.2 5 4.2S19.5 15 21.5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.5"/>
+      </svg>
+      WebNail
+    </a>
+    <div class="sf-links">
+      <a href="#how-it-works">How it works</a>
+      <a href="#founder">Founder</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <p class="sf-copy">© 2026 WebNail — pixels in, code out.</p>
+  </div>
+</footer>
+
+<!-- result modal -->
+<div class="result-overlay" id="resultOverlay">
+  <div class="result-modal">
+    <div class="rm-head">
+      <h4 id="resultTitle">Generated code</h4>
+      <button class="rm-close" id="resultClose" type="button">&times;</button>
+    </div>
+    <p id="resultStatus" style="display:none; margin:0; padding:0.75rem 1.25rem; font-size:0.8rem; color:var(--body-muted); border-bottom:1px solid var(--panel-line);"></p>
+    <pre id="resultCode"></pre>
+    <div class="rm-foot">
+      <button class="pill-ghost" id="resultCopy" type="button">Copy code</button>
+      <button class="pill" id="resultDownload" type="button">Download .html</button>
+    </div>
+  </div>
+</div>
+
+<!-- auth modal -->
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-modal">
+    <button class="am-close" id="authClose" type="button">&times;</button>
+    <h3 id="authTitle">Sign in to WebNail</h3>
+    <p class="am-sub" id="authSub">10 free generations, no card required.</p>
+
+    <button class="am-google" id="googleBtn" type="button">
+      <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47c-.28 1.48-1.13 2.73-2.4 3.58v2.98h3.88c2.27-2.09 3.55-5.17 3.55-8.8z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.9l-3.88-2.99c-1.08.72-2.45 1.15-4.05 1.15-3.11 0-5.75-2.1-6.69-4.92H1.3v3.09C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.31 14.34A7.2 7.2 0 0 1 4.9 12c0-.81.14-1.6.4-2.34V6.57H1.3A11.98 11.98 0 0 0 0 12c0 1.93.46 3.76 1.3 5.43l4.01-3.09z"/><path fill="#EA4335" d="M12 4.75c1.76 0 3.35.6 4.6 1.79l3.44-3.44C17.94 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.3 6.57l4.01 3.09C6.25 6.85 8.89 4.75 12 4.75z"/></svg>
+      Continue with Google
+    </button>
+
+    <div class="am-divider">or use email</div>
+
+    <form id="authForm">
+      <div class="am-field">
+        <label for="authEmail">Email</label>
+        <input id="authEmail" type="email" required autocomplete="email" placeholder="you@example.com">
+      </div>
+      <div class="am-field">
+        <label for="authPassword">Password</label>
+        <input id="authPassword" type="password" required autocomplete="current-password" placeholder="At least 6 characters" minlength="6">
+      </div>
+      <button class="am-submit" id="authSubmit" type="submit">Sign in</button>
+    </form>
+
+    <p class="am-status" id="authStatus"></p>
+
+    <p class="am-switch" id="authSwitchWrap">
+      Don't have an account? <button type="button" id="authSwitchBtn">Sign up</button>
+    </p>
+  </div>
+</div>
+
+<!-- API / upgrade modal -->
+<div class="api-overlay" id="apiOverlay">
+  <div class="api-modal">
+    <button class="am-close" id="apiClose" type="button">&times;</button>
+    <h3>API &amp; billing</h3>
+    <p class="am-sub" id="apiSub">You get 10 free code generations. Upgrade for unlimited generations and an API key.</p>
+
+    <div class="price-row">
+      <span class="amount">$5.99</span>
+      <span class="period">/ month</span>
+      <span class="tag">Unlimited</span>
+    </div>
+
+    <div class="plan-features">
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Unlimited screenshot &amp; link generations</div>
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Personal API key for programmatic use</div>
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Priority generation queue</div>
+      <div class="pf-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Cancel anytime</div>
+    </div>
+
+    <button class="am-submit" id="upgradeBtn" type="button" style="margin-top:1.4rem;">Upgrade — $5.99/mo</button>
+
+    <div class="api-key-box" id="apiKeyBox">
+      <code id="apiKeyText">wn_live_••••••••••••••••</code>
+      <button type="button" id="apiKeyCopy">Copy</button>
+    </div>
+
+    <p class="am-status" id="apiStatus"></p>
+  </div>
+</div>
+
+<script type="module">
+import Lenis from "lenis";
+const lenis = new Lenis({ smoothWheel: true });
+function raf(t){ lenis.raf(t); requestAnimationFrame(raf); }
+requestAnimationFrame(raf);
+
+/* ---------------- fluid simulation (verbatim engine) ---------------- */
+function fluidSimulation(canvas) {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+
+    let config = {
+        SIM_RESOLUTION: 200,
+        DYE_RESOLUTION: 512,
+        DENSITY_DISSIPATION: 0.958,
+        VELOCITY_DISSIPATION: 0.96,
+        PRESSURE_DISSIPATION: 0.8,
+        PRESSURE_ITERATIONS: 20,
+        CURL: 42,
+        SPLAT_RADIUS: 0.22,
+        SHADING: true,
+        COLORFUL: true,
+        PAUSED: false,
+        BACK_COLOR: { r: 4, g: 5, b: 12 },
+        TRANSPARENT: false,
+        BLOOM: false,
+        BLOOM_ITERATIONS: 8,
+        BLOOM_RESOLUTION: 256,
+        BLOOM_INTENSITY: 0.8,
+        BLOOM_THRESHOLD: 0.8,
+        BLOOM_SOFT_KNEE: 0.7
+    }
+
+    function pointerPrototype() {
+        this.id = -1;
+        this.x = 0;
+        this.y = 0;
+        this.dx = 0;
+        this.dy = 0;
+        this.down = false;
+        this.moved = false;
+        this.color = [30, 0, 300];
+    }
+
+    let pointers = [];
+    let splatStack = [];
+    let bloomFramebuffers = [];
+    pointers.push(new pointerPrototype());
+
+    const { gl, ext } = getWebGLContext(canvas);
+
+    if (isMobile())
+        config.SHADING = false;
+    if (!ext.supportLinearFiltering) {
+        config.SHADING = false;
+        config.BLOOM = false;
+    }
+
+    function getWebGLContext(canvas) {
+        const params = { alpha: true, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: false };
+
+        let gl = canvas.getContext('webgl2', params);
+        const isWebGL2 = !!gl;
+        if (!isWebGL2)
+            gl = canvas.getContext('webgl', params) || canvas.getContext('experimental-webgl', params);
+
+        let halfFloat;
+        let supportLinearFiltering;
+        if (isWebGL2) {
+            gl.getExtension('EXT_color_buffer_float');
+            supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
+        } else {
+            halfFloat = gl.getExtension('OES_texture_half_float');
+            supportLinearFiltering = gl.getExtension('OES_texture_half_float_linear');
+        }
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+        const halfFloatTexType = isWebGL2 ? gl.HALF_FLOAT : halfFloat.HALF_FLOAT_OES;
+        let formatRGBA;
+        let formatRG;
+        let formatR;
+
+        if (isWebGL2) {
+            formatRGBA = getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, halfFloatTexType);
+            formatRG = getSupportedFormat(gl, gl.RG16F, gl.RG, halfFloatTexType);
+            formatR = getSupportedFormat(gl, gl.R16F, gl.RED, halfFloatTexType);
+        }
+        else {
+            formatRGBA = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
+            formatRG = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
+            formatR = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
+        }
+
+        return {
+            gl,
+            ext: {
+                formatRGBA,
+                formatRG,
+                formatR,
+                halfFloatTexType,
+                supportLinearFiltering
+            }
+        };
+    }
+
+    function getSupportedFormat(gl, internalFormat, format, type) {
+        if (!supportRenderTextureFormat(gl, internalFormat, format, type)) {
+            switch (internalFormat) {
+                case gl.R16F:
+                    return getSupportedFormat(gl, gl.RG16F, gl.RG, type);
+                case gl.RG16F:
+                    return getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, type);
+                default:
+                    return null;
+            }
+        }
+
+        return {
+            internalFormat,
+            format
+        }
+    }
+
+    function supportRenderTextureFormat(gl, internalFormat, format, type) {
+        let texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, 4, 4, 0, format, type, null);
+
+        let fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (status != gl.FRAMEBUFFER_COMPLETE)
+            return false;
+        return true;
+    }
+
+    function clamp01(input) {
+        return Math.min(Math.max(input, 0), 1);
+    }
+
+    function isMobile() {
+        return /Mobi|Android/i.test(navigator.userAgent);
+    }
+
+    class GLProgram {
+        constructor(vertexShader, fragmentShader) {
+            this.uniforms = {};
+            this.program = gl.createProgram();
+
+            gl.attachShader(this.program, vertexShader);
+            gl.attachShader(this.program, fragmentShader);
+            gl.linkProgram(this.program);
+
+            if (!gl.getProgramParameter(this.program, gl.LINK_STATUS))
+                throw gl.getProgramInfoLog(this.program);
+
+            const uniformCount = gl.getProgramParameter(this.program, gl.ACTIVE_UNIFORMS);
+            for (let i = 0; i < uniformCount; i++) {
+                const uniformName = gl.getActiveUniform(this.program, i).name;
+                this.uniforms[uniformName] = gl.getUniformLocation(this.program, uniformName);
+            }
+        }
+
+        bind() {
+            gl.useProgram(this.program);
+        }
+    }
+
+    function compileShader(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+            throw gl.getShaderInfoLog(shader);
+
+        return shader;
+    };
+
+    const baseVertexShader = compileShader(gl.VERTEX_SHADER, `
+        precision highp float;
+        attribute vec2 aPosition;
+        varying vec2 vUv;
+        varying vec2 vL;
+        varying vec2 vR;
+        varying vec2 vT;
+        varying vec2 vB;
+        uniform vec2 texelSize;
+        void main () {
+            vUv = aPosition * 0.5 + 0.5;
+            vL = vUv - vec2(texelSize.x, 0.0);
+            vR = vUv + vec2(texelSize.x, 0.0);
+            vT = vUv + vec2(0.0, texelSize.y);
+            vB = vUv - vec2(0.0, texelSize.y);
+            gl_Position = vec4(aPosition, 0.0, 1.0);
+        }
+    `);
+
+    const clearShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying highp vec2 vUv;
+        uniform sampler2D uTexture;
+        uniform float value;
+        void main () {
+            gl_FragColor = value * texture2D(uTexture, vUv);
+        }
+    `);
+
+    const colorShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        uniform vec4 color;
+        void main () {
+            gl_FragColor = color;
+        }
+    `);
+
+    const backgroundShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        uniform sampler2D uTexture;
+        uniform float aspectRatio;
+        #define SCALE 25.0
+        void main () {
+            vec2 uv = floor(vUv * SCALE * vec2(aspectRatio, 1.0));
+            float v = mod(uv.x + uv.y, 2.0);
+            v = v * 0.1 + 0.8;
+            gl_FragColor = vec4(vec3(v), 1.0);
+        }
+    `);
+
+    const displayShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        uniform sampler2D uTexture;
+        void main () {
+            vec3 C = texture2D(uTexture, vUv).rgb;
+            float a = max(C.r, max(C.g, C.b));
+            gl_FragColor = vec4(C, a);
+        }
+    `);
+
+    const displayBloomShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        uniform sampler2D uTexture;
+        uniform sampler2D uBloom;
+        uniform sampler2D uDithering;
+        uniform vec2 ditherScale;
+        void main () {
+            vec3 C = texture2D(uTexture, vUv).rgb;
+            vec3 bloom = texture2D(uBloom, vUv).rgb;
+            vec3 noise = texture2D(uDithering, vUv * ditherScale).rgb;
+            noise = noise * 2.0 - 1.0;
+            bloom += noise / 800.0;
+            bloom = pow(bloom.rgb, vec3(1.0 / 2.2));
+            C += bloom;
+            float a = max(C.r, max(C.g, C.b));
+            gl_FragColor = vec4(C, a);
+        }
+    `);
+
+    const displayShadingShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        varying vec2 vL;
+        varying vec2 vR;
+        varying vec2 vT;
+        varying vec2 vB;
+        uniform sampler2D uTexture;
+        uniform vec2 texelSize;
+        void main () {
+            vec3 L = texture2D(uTexture, vL).rgb;
+            vec3 R = texture2D(uTexture, vR).rgb;
+            vec3 T = texture2D(uTexture, vT).rgb;
+            vec3 B = texture2D(uTexture, vB).rgb;
+            vec3 C = texture2D(uTexture, vUv).rgb;
+            float dx = length(R) - length(L);
+            float dy = length(T) - length(B);
+            vec3 n = normalize(vec3(dx, dy, length(texelSize)));
+            vec3 l = vec3(0.0, 0.0, 1.0);
+            float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
+            C.rgb *= diffuse;
+            float a = max(C.r, max(C.g, C.b));
+            gl_FragColor = vec4(C, a);
+        }
+    `);
+
+    const displayBloomShadingShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        varying vec2 vL;
+        varying vec2 vR;
+        varying vec2 vT;
+        varying vec2 vB;
+        uniform sampler2D uTexture;
+        uniform sampler2D uBloom;
+        uniform sampler2D uDithering;
+        uniform vec2 ditherScale;
+        uniform vec2 texelSize;
+        void main () {
+            vec3 L = texture2D(uTexture, vL).rgb;
+            vec3 R = texture2D(uTexture, vR).rgb;
+            vec3 T = texture2D(uTexture, vT).rgb;
+            vec3 B = texture2D(uTexture, vB).rgb;
+            vec3 C = texture2D(uTexture, vUv).rgb;
+            float dx = length(R) - length(L);
+            float dy = length(T) - length(B);
+            vec3 n = normalize(vec3(dx, dy, length(texelSize)));
+            vec3 l = vec3(0.0, 0.0, 1.0);
+            float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
+            C *= diffuse;
+            vec3 bloom = texture2D(uBloom, vUv).rgb;
+            vec3 noise = texture2D(uDithering, vUv * ditherScale).rgb;
+            noise = noise * 2.0 - 1.0;
+            bloom += noise / 800.0;
+            bloom = pow(bloom.rgb, vec3(1.0 / 2.2));
+            C += bloom;
+            float a = max(C.r, max(C.g, C.b));
+            gl_FragColor = vec4(C, a);
+        }
+    `);
+
+    const bloomPrefilterShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying vec2 vUv;
+        uniform sampler2D uTexture;
+        uniform vec3 curve;
+        uniform float threshold;
+        void main () {
+            vec3 c = texture2D(uTexture, vUv).rgb;
+            float br = max(c.r, max(c.g, c.b));
+            float rq = clamp(br - curve.x, 0.0, curve.y);
+            rq = curve.z * rq * rq;
+            c *= max(rq, br - threshold) / max(br, 0.0001);
+            gl_FragColor = vec4(c, 0.0);
+        }
+    `);
+
+    const bloomBlurShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying vec2 vL;
+        varying vec2 vR;
+        varying vec2 vT;
+        varying vec2 vB;
+        uniform sampler2D uTexture;
+        void main () {
+            vec4 sum = vec4(0.0);
+            sum += texture2D(uTexture, vL);
+            sum += texture2D(uTexture, vR);
+            sum += texture2D(uTexture, vT);
+            sum += texture2D(uTexture, vB);
+            sum *= 0.25;
+            gl_FragColor = sum;
+        }
+    `);
+
+    const bloomFinalShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying vec2 vL;
+        varying vec2 vR;
+        varying vec2 vT;
+        varying vec2 vB;
+        uniform sampler2D uTexture;
+        uniform float intensity;
+        void main () {
+            vec4 sum = vec4(0.0);
+            sum += texture2D(uTexture, vL);
+            sum += texture2D(uTexture, vR);
+            sum += texture2D(uTexture, vT);
+            sum += texture2D(uTexture, vB);
+            sum *= 0.25;
+            gl_FragColor = sum * intensity;
+        }
+    `);
+
+    const splatShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        uniform sampler2D uTarget;
+        uniform float aspectRatio;
+        uniform vec3 color;
+        uniform vec2 point;
+        uniform float radius;
+        void main () {
+            vec2 p = vUv - point.xy;
+            p.x *= aspectRatio;
+            vec3 splat = exp(-dot(p, p) / radius) * color;
+            vec3 base = texture2D(uTarget, vUv).xyz;
+            gl_FragColor = vec4(base + splat, 1.0);
+        }
+    `);
+
+    const advectionManualFilteringShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        uniform sampler2D uVelocity;
+        uniform sampler2D uSource;
+        uniform vec2 texelSize;
+        uniform vec2 dyeTexelSize;
+        uniform float dt;
+        uniform float dissipation;
+        vec4 bilerp (sampler2D sam, vec2 uv, vec2 tsize) {
+            vec2 st = uv / tsize - 0.5;
+            vec2 iuv = floor(st);
+            vec2 fuv = fract(st);
+            vec4 a = texture2D(sam, (iuv + vec2(0.5, 0.5)) * tsize);
+            vec4 b = texture2D(sam, (iuv + vec2(1.5, 0.5)) * tsize);
+            vec4 c = texture2D(sam, (iuv + vec2(0.5, 1.5)) * tsize);
+            vec4 d = texture2D(sam, (iuv + vec2(1.5, 1.5)) * tsize);
+            return mix(mix(a, b, fuv.x), mix(c, d, fuv.x), fuv.y);
+        }
+        void main () {
+            vec2 coord = vUv - dt * bilerp(uVelocity, vUv, texelSize).xy * texelSize;
+            gl_FragColor = dissipation * bilerp(uSource, coord, dyeTexelSize);
+            gl_FragColor.a = 1.0;
+        }
+    `);
+
+    const advectionShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        uniform sampler2D uVelocity;
+        uniform sampler2D uSource;
+        uniform vec2 texelSize;
+        uniform float dt;
+        uniform float dissipation;
+        void main () {
+            vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * texelSize;
+            gl_FragColor = dissipation * texture2D(uSource, coord);
+            gl_FragColor.a = 1.0;
+        }
+    `);
+
+    const divergenceShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying highp vec2 vUv;
+        varying highp vec2 vL;
+        varying highp vec2 vR;
+        varying highp vec2 vT;
+        varying highp vec2 vB;
+        uniform sampler2D uVelocity;
+        void main () {
+            float L = texture2D(uVelocity, vL).x;
+            float R = texture2D(uVelocity, vR).x;
+            float T = texture2D(uVelocity, vT).y;
+            float B = texture2D(uVelocity, vB).y;
+            vec2 C = texture2D(uVelocity, vUv).xy;
+            if (vL.x < 0.0) { L = -C.x; }
+            if (vR.x > 1.0) { R = -C.x; }
+            if (vT.y > 1.0) { T = -C.y; }
+            if (vB.y < 0.0) { B = -C.y; }
+            float div = 0.5 * (R - L + T - B);
+            gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+        }
+    `);
+
+    const curlShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying highp vec2 vUv;
+        varying highp vec2 vL;
+        varying highp vec2 vR;
+        varying highp vec2 vT;
+        varying highp vec2 vB;
+        uniform sampler2D uVelocity;
+        void main () {
+            float L = texture2D(uVelocity, vL).y;
+            float R = texture2D(uVelocity, vR).y;
+            float T = texture2D(uVelocity, vT).x;
+            float B = texture2D(uVelocity, vB).x;
+            float vorticity = R - L - T + B;
+            gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
+        }
+    `);
+
+    const vorticityShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision highp float;
+        precision highp sampler2D;
+        varying vec2 vUv;
+        varying vec2 vL;
+        varying vec2 vR;
+        varying vec2 vT;
+        varying vec2 vB;
+        uniform sampler2D uVelocity;
+        uniform sampler2D uCurl;
+        uniform float curl;
+        uniform float dt;
+        void main () {
+            float L = texture2D(uCurl, vL).x;
+            float R = texture2D(uCurl, vR).x;
+            float T = texture2D(uCurl, vT).x;
+            float B = texture2D(uCurl, vB).x;
+            float C = texture2D(uCurl, vUv).x;
+            vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+            force /= length(force) + 0.0001;
+            force *= curl * C;
+            force.y *= -1.0;
+            vec2 vel = texture2D(uVelocity, vUv).xy;
+            gl_FragColor = vec4(vel + force * dt, 0.0, 1.0);
+        }
+    `);
+
+    const pressureShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying highp vec2 vUv;
+        varying highp vec2 vL;
+        varying highp vec2 vR;
+        varying highp vec2 vT;
+        varying highp vec2 vB;
+        uniform sampler2D uPressure;
+        uniform sampler2D uDivergence;
+        vec2 boundary (vec2 uv) {
+            return uv;
+        }
+        void main () {
+            float L = texture2D(uPressure, boundary(vL)).x;
+            float R = texture2D(uPressure, boundary(vR)).x;
+            float T = texture2D(uPressure, boundary(vT)).x;
+            float B = texture2D(uPressure, boundary(vB)).x;
+            float C = texture2D(uPressure, vUv).x;
+            float divergence = texture2D(uDivergence, vUv).x;
+            float pressure = (L + R + B + T - divergence) * 0.25;
+            gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
+        }
+    `);
+
+    const gradientSubtractShader = compileShader(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        precision mediump sampler2D;
+        varying highp vec2 vUv;
+        varying highp vec2 vL;
+        varying highp vec2 vR;
+        varying highp vec2 vT;
+        varying highp vec2 vB;
+        uniform sampler2D uPressure;
+        uniform sampler2D uVelocity;
+        vec2 boundary (vec2 uv) {
+            return uv;
+        }
+        void main () {
+            float L = texture2D(uPressure, boundary(vL)).x;
+            float R = texture2D(uPressure, boundary(vR)).x;
+            float T = texture2D(uPressure, boundary(vT)).x;
+            float B = texture2D(uPressure, boundary(vB)).x;
+            vec2 velocity = texture2D(uVelocity, vUv).xy;
+            velocity.xy -= vec2(R - L, T - B);
+            gl_FragColor = vec4(velocity, 0.0, 1.0);
+        }
+    `);
+
+    const blit = (() => {
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(0);
+
+        return (destination) => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+        }
+    })();
+
+    let simWidth;
+    let simHeight;
+    let dyeWidth;
+    let dyeHeight;
+    let density;
+    let velocity;
+    let divergence;
+    let curl;
+    let pressure;
+    let bloom;
+
+    let ditheringTexture = createNoiseTexture(256);
+
+    const clearProgram = new GLProgram(baseVertexShader, clearShader);
+    const colorProgram = new GLProgram(baseVertexShader, colorShader);
+    const backgroundProgram = new GLProgram(baseVertexShader, backgroundShader);
+    const displayProgram = new GLProgram(baseVertexShader, displayShader);
+    const displayBloomProgram = new GLProgram(baseVertexShader, displayBloomShader);
+    const displayShadingProgram = new GLProgram(baseVertexShader, displayShadingShader);
+    const displayBloomShadingProgram = new GLProgram(baseVertexShader, displayBloomShadingShader);
+    const bloomPrefilterProgram = new GLProgram(baseVertexShader, bloomPrefilterShader);
+    const bloomBlurProgram = new GLProgram(baseVertexShader, bloomBlurShader);
+    const bloomFinalProgram = new GLProgram(baseVertexShader, bloomFinalShader);
+    const splatProgram = new GLProgram(baseVertexShader, splatShader);
+    const advectionProgram = new GLProgram(baseVertexShader, ext.supportLinearFiltering ? advectionShader : advectionManualFilteringShader);
+    const divergenceProgram = new GLProgram(baseVertexShader, divergenceShader);
+    const curlProgram = new GLProgram(baseVertexShader, curlShader);
+    const vorticityProgram = new GLProgram(baseVertexShader, vorticityShader);
+    const pressureProgram = new GLProgram(baseVertexShader, pressureShader);
+    const gradienSubtractProgram = new GLProgram(baseVertexShader, gradientSubtractShader);
+
+    function initFramebuffers() {
+        let simRes = getResolution(config.SIM_RESOLUTION);
+        let dyeRes = getResolution(config.DYE_RESOLUTION);
+
+        simWidth = simRes.width;
+        simHeight = simRes.height;
+        dyeWidth = dyeRes.width;
+        dyeHeight = dyeRes.height;
+
+        const texType = ext.halfFloatTexType;
+        const rgba = ext.formatRGBA;
+        const rg = ext.formatRG;
+        const r = ext.formatR;
+        const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
+
+        if (density == null)
+            density = createDoubleFBO(dyeWidth, dyeHeight, rgba.internalFormat, rgba.format, texType, filtering);
+        else
+            density = resizeDoubleFBO(density, dyeWidth, dyeHeight, rgba.internalFormat, rgba.format, texType, filtering);
+
+        if (velocity == null)
+            velocity = createDoubleFBO(simWidth, simHeight, rg.internalFormat, rg.format, texType, filtering);
+        else
+            velocity = resizeDoubleFBO(velocity, simWidth, simHeight, rg.internalFormat, rg.format, texType, filtering);
+
+        divergence = createFBO(simWidth, simHeight, r.internalFormat, r.format, texType, gl.NEAREST);
+        curl = createFBO(simWidth, simHeight, r.internalFormat, r.format, texType, gl.NEAREST);
+        pressure = createDoubleFBO(simWidth, simHeight, r.internalFormat, r.format, texType, gl.NEAREST);
+
+        initBloomFramebuffers();
+    }
+
+    function initBloomFramebuffers() {
+        let res = getResolution(config.BLOOM_RESOLUTION);
+
+        const texType = ext.halfFloatTexType;
+        const rgba = ext.formatRGBA;
+        const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
+
+        bloom = createFBO(res.width, res.height, rgba.internalFormat, rgba.format, texType, filtering);
+
+        bloomFramebuffers.length = 0;
+        for (let i = 0; i < config.BLOOM_ITERATIONS; i++) {
+            let width = res.width >> (i + 1);
+            let height = res.height >> (i + 1);
+
+            if (width < 2 || height < 2) break;
+
+            let fbo = createFBO(width, height, rgba.internalFormat, rgba.format, texType, filtering);
+            bloomFramebuffers.push(fbo);
+        }
+    }
+
+    function createFBO(w, h, internalFormat, format, type, param) {
+        gl.activeTexture(gl.TEXTURE0);
+        let texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, param);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, param);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
+
+        let fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+        gl.viewport(0, 0, w, h);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        return {
+            texture,
+            fbo,
+            width: w,
+            height: h,
+            attach(id) {
+                gl.activeTexture(gl.TEXTURE0 + id);
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                return id;
+            }
+        };
+    }
+
+    function createDoubleFBO(w, h, internalFormat, format, type, param) {
+        let fbo1 = createFBO(w, h, internalFormat, format, type, param);
+        let fbo2 = createFBO(w, h, internalFormat, format, type, param);
+
+        return {
+            get read() { return fbo1; },
+            set read(value) { fbo1 = value; },
+            get write() { return fbo2; },
+            set write(value) { fbo2 = value; },
+            swap() {
+                let temp = fbo1;
+                fbo1 = fbo2;
+                fbo2 = temp;
+            }
+        }
+    }
+
+    function resizeFBO(target, w, h, internalFormat, format, type, param) {
+        let newFBO = createFBO(w, h, internalFormat, format, type, param);
+        clearProgram.bind();
+        gl.uniform1i(clearProgram.uniforms.uTexture, target.attach(0));
+        gl.uniform1f(clearProgram.uniforms.value, 1);
+        blit(newFBO.fbo);
+        return newFBO;
+    }
+
+    function resizeDoubleFBO(target, w, h, internalFormat, format, type, param) {
+        target.read = resizeFBO(target.read, w, h, internalFormat, format, type, param);
+        target.write = createFBO(w, h, internalFormat, format, type, param);
+        return target;
+    }
+
+    function createNoiseTexture(size) {
+        const data = new Uint8Array(size * size * 3);
+        for (let i = 0; i < data.length; i++)
+            data[i] = Math.floor(Math.random() * 256);
+        let texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, size, size, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+        return {
+            texture,
+            width: size,
+            height: size,
+            attach(id) {
+                gl.activeTexture(gl.TEXTURE0 + id);
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                return id;
+            }
+        };
+    }
+
+    initFramebuffers();
+    multipleSplats(34);
+    for (let i = 0; i < 8; i++)
+        splatStack.push(10 + parseInt(Math.random() * 10));
+
+    let lastColorChangeTime = Date.now();
+    let virtualSeeded = false;
+    let orbitAngle = 0;
+    let vPrevX = 0, vPrevY = 0;
+    let virtualColor = null;
+    let lastVColorTime = 0;
+    const engineStart = Date.now();
+    const ORBIT_RADIUS = 300;
+    const ORBIT_SPEED = 0.026;
+    const ORBIT_START_DELAY = 700;
+
+    let rafHandle = 0;
+    let destroyed = false;
+
+    update();
+
+    function update() {
+        if (destroyed) return;
+        resizeCanvas();
+        driveVirtualPointer();
+        input();
+        if (!config.PAUSED)
+            step(0.016);
+        render(null);
+        rafHandle = requestAnimationFrame(update);
+    }
+
+    function driveVirtualPointer() {
+        if (Date.now() - engineStart < ORBIT_START_DELAY)
+            return;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const base = Math.min(ORBIT_RADIUS, canvas.width * 0.35, canvas.height * 0.35);
+        const r = base * (0.72 + 0.28 * Math.sin(orbitAngle * 0.37));
+        orbitAngle += ORBIT_SPEED;
+        const x = cx + Math.cos(orbitAngle) * r;
+        const y = cy + Math.sin(orbitAngle) * r;
+        if (!virtualSeeded) {
+            virtualSeeded = true;
+            vPrevX = x;
+            vPrevY = y;
+            return;
+        }
+        if (!virtualColor || Date.now() - lastVColorTime > 120) {
+            virtualColor = generateColor();
+            virtualColor.r *= 3.2;
+            virtualColor.g *= 3.2;
+            virtualColor.b *= 3.2;
+            lastVColorTime = Date.now();
+        }
+        const dx = (x - vPrevX) * 9.0;
+        const dy = (y - vPrevY) * 9.0;
+        vPrevX = x;
+        vPrevY = y;
+        splat(x, y, dx, dy, virtualColor);
+    }
+
+    function input() {
+        if (splatStack.length > 0)
+            multipleSplats(splatStack.pop());
+
+        for (let i = 0; i < pointers.length; i++) {
+            const p = pointers[i];
+            if (p.moved) {
+                splat(p.x, p.y, p.dx, p.dy, p.color);
+                p.moved = false;
+            }
+        }
+
+        if (!config.COLORFUL)
+            return;
+
+        if (lastColorChangeTime + 100 < Date.now()) {
+            lastColorChangeTime = Date.now();
+            for (let i = 0; i < pointers.length; i++) {
+                const p = pointers[i];
+                p.color = generateColor();
+            }
+        }
+    }
+
+    function step(dt) {
+        gl.disable(gl.BLEND);
+        gl.viewport(0, 0, simWidth, simHeight);
+
+        curlProgram.bind();
+        gl.uniform2f(curlProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+        gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.attach(0));
+        blit(curl.fbo);
+
+        vorticityProgram.bind();
+        gl.uniform2f(vorticityProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+        gl.uniform1i(vorticityProgram.uniforms.uVelocity, velocity.read.attach(0));
+        gl.uniform1i(vorticityProgram.uniforms.uCurl, curl.attach(1));
+        gl.uniform1f(vorticityProgram.uniforms.curl, config.CURL);
+        gl.uniform1f(vorticityProgram.uniforms.dt, dt);
+        blit(velocity.write.fbo);
+        velocity.swap();
+
+        divergenceProgram.bind();
+        gl.uniform2f(divergenceProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+        gl.uniform1i(divergenceProgram.uniforms.uVelocity, velocity.read.attach(0));
+        blit(divergence.fbo);
+
+        clearProgram.bind();
+        gl.uniform1i(clearProgram.uniforms.uTexture, pressure.read.attach(0));
+        gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE_DISSIPATION);
+        blit(pressure.write.fbo);
+        pressure.swap();
+
+        pressureProgram.bind();
+        gl.uniform2f(pressureProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+        gl.uniform1i(pressureProgram.uniforms.uDivergence, divergence.attach(0));
+        for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
+            gl.uniform1i(pressureProgram.uniforms.uPressure, pressure.read.attach(1));
+            blit(pressure.write.fbo);
+            pressure.swap();
+        }
+
+        gradienSubtractProgram.bind();
+        gl.uniform2f(gradienSubtractProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+        gl.uniform1i(gradienSubtractProgram.uniforms.uPressure, pressure.read.attach(0));
+        gl.uniform1i(gradienSubtractProgram.uniforms.uVelocity, velocity.read.attach(1));
+        blit(velocity.write.fbo);
+        velocity.swap();
+
+        advectionProgram.bind();
+        gl.uniform2f(advectionProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+        if (!ext.supportLinearFiltering)
+            gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, 1.0 / simWidth, 1.0 / simHeight);
+        let velocityId = velocity.read.attach(0);
+        gl.uniform1i(advectionProgram.uniforms.uVelocity, velocityId);
+        gl.uniform1i(advectionProgram.uniforms.uSource, velocityId);
+        gl.uniform1f(advectionProgram.uniforms.dt, dt);
+        gl.uniform1f(advectionProgram.uniforms.dissipation, config.VELOCITY_DISSIPATION);
+        blit(velocity.write.fbo);
+        velocity.swap();
+
+        gl.viewport(0, 0, dyeWidth, dyeHeight);
+
+        if (!ext.supportLinearFiltering)
+            gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, 1.0 / dyeWidth, 1.0 / dyeHeight);
+        gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
+        gl.uniform1i(advectionProgram.uniforms.uSource, density.read.attach(1));
+        gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
+        blit(density.write.fbo);
+        density.swap();
+    }
+
+    function render(target) {
+        if (config.BLOOM)
+            applyBloom(density.read, bloom);
+
+        if (target == null || !config.TRANSPARENT) {
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            gl.enable(gl.BLEND);
+        }
+        else {
+            gl.disable(gl.BLEND);
+        }
+
+        let width = target == null ? gl.drawingBufferWidth : dyeWidth;
+        let height = target == null ? gl.drawingBufferHeight : dyeHeight;
+
+        gl.viewport(0, 0, width, height);
+
+        if (!config.TRANSPARENT) {
+            colorProgram.bind();
+            let bc = config.BACK_COLOR;
+            gl.uniform4f(colorProgram.uniforms.color, bc.r / 255, bc.g / 255, bc.b / 255, 1);
+            blit(target);
+        }
+
+        if (target == null && config.TRANSPARENT) {
+            backgroundProgram.bind();
+            gl.uniform1f(backgroundProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+            blit(null);
+        }
+
+        if (config.SHADING) {
+            let program = config.BLOOM ? displayBloomShadingProgram : displayShadingProgram;
+            program.bind();
+            gl.uniform2f(program.uniforms.texelSize, 1.0 / width, 1.0 / height);
+            gl.uniform1i(program.uniforms.uTexture, density.read.attach(0));
+            if (config.BLOOM) {
+                gl.uniform1i(program.uniforms.uBloom, bloom.attach(1));
+                gl.uniform1i(program.uniforms.uDithering, ditheringTexture.attach(2));
+                let scale = getTextureScale(ditheringTexture, width, height);
+                gl.uniform2f(program.uniforms.ditherScale, scale.x, scale.y);
+            }
+        }
+        else {
+            let program = config.BLOOM ? displayBloomProgram : displayProgram;
+            program.bind();
+            gl.uniform1i(program.uniforms.uTexture, density.read.attach(0));
+            if (config.BLOOM) {
+                gl.uniform1i(program.uniforms.uBloom, bloom.attach(1));
+                gl.uniform1i(program.uniforms.uDithering, ditheringTexture.attach(2));
+                let scale = getTextureScale(ditheringTexture, width, height);
+                gl.uniform2f(program.uniforms.ditherScale, scale.x, scale.y);
+            }
+        }
+
+        blit(target);
+    }
+
+    function applyBloom(source, destination) {
+        if (bloomFramebuffers.length < 2)
+            return;
+
+        let last = destination;
+
+        gl.disable(gl.BLEND);
+        bloomPrefilterProgram.bind();
+        let knee = config.BLOOM_THRESHOLD * config.BLOOM_SOFT_KNEE + 0.0001;
+        let curve0 = config.BLOOM_THRESHOLD - knee;
+        let curve1 = knee * 2;
+        let curve2 = 0.25 / knee;
+        gl.uniform3f(bloomPrefilterProgram.uniforms.curve, curve0, curve1, curve2);
+        gl.uniform1f(bloomPrefilterProgram.uniforms.threshold, config.BLOOM_THRESHOLD);
+        gl.uniform1i(bloomPrefilterProgram.uniforms.uTexture, source.attach(0));
+        gl.viewport(0, 0, last.width, last.height);
+        blit(last.fbo);
+
+        bloomBlurProgram.bind();
+        for (let i = 0; i < bloomFramebuffers.length; i++) {
+            let dest = bloomFramebuffers[i];
+            gl.uniform2f(bloomBlurProgram.uniforms.texelSize, 1.0 / last.width, 1.0 / last.height);
+            gl.uniform1i(bloomBlurProgram.uniforms.uTexture, last.attach(0));
+            gl.viewport(0, 0, dest.width, dest.height);
+            blit(dest.fbo);
+            last = dest;
+        }
+
+        gl.blendFunc(gl.ONE, gl.ONE);
+        gl.enable(gl.BLEND);
+
+        for (let i = bloomFramebuffers.length - 2; i >= 0; i--) {
+            let baseTex = bloomFramebuffers[i];
+            gl.uniform2f(bloomBlurProgram.uniforms.texelSize, 1.0 / last.width, 1.0 / last.height);
+            gl.uniform1i(bloomBlurProgram.uniforms.uTexture, last.attach(0));
+            gl.viewport(0, 0, baseTex.width, baseTex.height);
+            blit(baseTex.fbo);
+            last = baseTex;
+        }
+
+        gl.disable(gl.BLEND);
+        bloomFinalProgram.bind();
+        gl.uniform2f(bloomFinalProgram.uniforms.texelSize, 1.0 / last.width, 1.0 / last.height);
+        gl.uniform1i(bloomFinalProgram.uniforms.uTexture, last.attach(0));
+        gl.uniform1f(bloomFinalProgram.uniforms.intensity, config.BLOOM_INTENSITY);
+        gl.viewport(0, 0, destination.width, destination.height);
+        blit(destination.fbo);
+    }
+
+    function splat(x, y, dx, dy, color) {
+        gl.viewport(0, 0, simWidth, simHeight);
+        splatProgram.bind();
+        gl.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
+        gl.uniform1f(splatProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+        gl.uniform2f(splatProgram.uniforms.point, x / canvas.width, 1.0 - y / canvas.height);
+        gl.uniform3f(splatProgram.uniforms.color, dx, -dy, 1.0);
+        gl.uniform1f(splatProgram.uniforms.radius, config.SPLAT_RADIUS / 100.0);
+        blit(velocity.write.fbo);
+        velocity.swap();
+
+        gl.viewport(0, 0, dyeWidth, dyeHeight);
+        gl.uniform1i(splatProgram.uniforms.uTarget, density.read.attach(0));
+        gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
+        blit(density.write.fbo);
+        density.swap();
+    }
+
+    function multipleSplats(amount) {
+        for (let i = 0; i < amount; i++) {
+            const color = generateColor();
+            color.r *= 10.0;
+            color.g *= 10.0;
+            color.b *= 10.0;
+            const x = canvas.width * Math.random();
+            const y = canvas.height * Math.random();
+            const dx = 1000 * (Math.random() - 0.5);
+            const dy = 1000 * (Math.random() - 0.5);
+            splat(x, y, dx, dy, color);
+        }
+    }
+
+    function resizeCanvas() {
+        if (canvas.width != canvas.clientWidth || canvas.height != canvas.clientHeight) {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+            initFramebuffers();
+        }
+    }
+
+    function pointerPos(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    const teardown = [];
+    function on(target, type, handler, opts) {
+        target.addEventListener(type, handler, opts);
+        teardown.push(() => target.removeEventListener(type, handler, opts));
+    }
+
+    on(window, 'mousemove', e => {
+        const { x, y } = pointerPos(e.clientX, e.clientY);
+        const p = pointers[0];
+        if (!p.everMoved) {
+            p.everMoved = true;
+            p.x = x;
+            p.y = y;
+            p.down = true;
+            return;
+        }
+        p.down = true;
+        p.moved = true;
+        p.dx = (x - p.x) * 5.0;
+        p.dy = (y - p.y) * 5.0;
+        p.x = x;
+        p.y = y;
+        p.color = generateColor();
+    });
+
+    on(window, 'touchmove', e => {
+        const touches = e.targetTouches;
+        for (let i = 0; i < touches.length; i++) {
+            if (i >= pointers.length)
+                pointers.push(new pointerPrototype());
+            const p = pointers[i];
+            const { x, y } = pointerPos(touches[i].clientX, touches[i].clientY);
+            p.down = true;
+            p.moved = p.everMoved === true;
+            p.everMoved = true;
+            p.dx = (x - p.x) * 8.0;
+            p.dy = (y - p.y) * 8.0;
+            p.x = x;
+            p.y = y;
+        }
+    }, { passive: true });
+
+    on(window, 'touchstart', e => {
+        const touches = e.targetTouches;
+        for (let i = 0; i < touches.length; i++) {
+            if (i >= pointers.length)
+                pointers.push(new pointerPrototype());
+            const p = pointers[i];
+            const { x, y } = pointerPos(touches[i].clientX, touches[i].clientY);
+            p.id = touches[i].identifier;
+            p.down = true;
+            p.x = x;
+            p.y = y;
+            p.color = generateColor();
+        }
+    }, { passive: true });
+
+    on(window, 'mouseup', () => {
+        pointers[0].down = false;
+    });
+
+    on(window, 'touchend', e => {
+        const touches = e.changedTouches;
+        for (let i = 0; i < touches.length; i++)
+            for (let j = 0; j < pointers.length; j++)
+                if (touches[i].identifier == pointers[j].id)
+                    pointers[j].down = false;
+    });
+
+    return function destroy() {
+        destroyed = true;
+        if (rafHandle) cancelAnimationFrame(rafHandle);
+        for (const off of teardown) off();
+    };
+
+    function generateColor() {
+        const h = 0.5 + Math.random() * 0.42;
+        let c = HSVtoRGB(h, 0.95, 1.0);
+        c.r *= 0.92;
+        c.g *= 0.92;
+        c.b *= 0.92;
+        return c;
+    }
+
+    function HSVtoRGB(h, s, v) {
+        let r, g, b, i, f, p, q, t;
+        i = Math.floor(h * 6);
+        f = h * 6 - i;
+        p = v * (1 - s);
+        q = v * (1 - f * s);
+        t = v * (1 - (1 - f) * s);
+
+        switch (i % 6) {
+            case 0: r = v, g = t, b = p; break;
+            case 1: r = q, g = v, b = p; break;
+            case 2: r = p, g = v, b = t; break;
+            case 3: r = p, g = q, b = v; break;
+            case 4: r = t, g = p, b = v; break;
+            case 5: r = v, g = p, b = q; break;
+        }
+        return { r, g, b };
+    }
+
+    function getResolution(resolution) {
+        let aspectRatio = gl.drawingBufferWidth / gl.drawingBufferHeight;
+        if (aspectRatio < 1)
+            aspectRatio = 1.0 / aspectRatio;
+
+        let max = Math.round(resolution * aspectRatio);
+        let min = Math.round(resolution);
+
+        if (gl.drawingBufferWidth > gl.drawingBufferHeight)
+            return { width: max, height: min };
+        else
+            return { width: min, height: max };
+    }
+
+    function getTextureScale(texture, width, height) {
+        return { x: width / texture.width, y: height / texture.height };
+    }
+}
+
+const canvas = document.querySelector(".hero canvas");
+if (canvas) fluidSimulation(canvas);
+
+/* ---------------- content stagger ---------------- */
+function splitWords(el) {
+  const text = el.textContent.trim();
+  el.textContent = "";
+  const words = text.split(" ");
+  words.forEach((w, i) => {
+    const span = document.createElement("span");
+    span.className = "word";
+    span.textContent = w + (i < words.length - 1 ? "\u00A0" : "");
+    el.appendChild(span);
+  });
+  return el.querySelectorAll(".word");
+}
+
+const headingWords = splitWords(document.getElementById("headline"));
+const subWords = splitWords(document.getElementById("sub"));
+
+function revealBlock(el, delay) { setTimeout(() => el.classList.add("in"), delay); }
+function revealWords(words, baseDelay, stagger) {
+  words.forEach((w, i) => setTimeout(() => w.classList.add("in"), baseDelay + i * stagger));
+}
+
+revealBlock(document.getElementById("nav"), 150);
+revealBlock(document.getElementById("badge"), 320);
+revealWords(headingWords, 480, 85);
+revealWords(subWords, 1150, 22);
+revealBlock(document.getElementById("panelWrap"), 1450);
+revealBlock(document.getElementById("footer"), 1650);
+
+/* ---------------- mode toggle ---------------- */
+const modeBtns = document.querySelectorAll(".mode-btn");
+const panels = document.querySelectorAll(".mode-body");
+modeBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    modeBtns.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const mode = btn.dataset.mode;
+    panels.forEach(p => { p.style.display = p.dataset.panel === mode ? "" : "none"; });
+  });
+});
+
+/* ---------------- output format toggle ---------------- */
+const formatChips = document.querySelectorAll(".format-chip");
+let selectedFormat = "html";
+formatChips.forEach(chip => {
+  chip.addEventListener("click", () => {
+    formatChips.forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    selectedFormat = chip.dataset.format;
+  });
+});
+function currentFormat() { return selectedFormat; }
+
+/* ---------------- upload flow ---------------- */
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const uploadGenerate = document.getElementById("uploadGenerate");
+let selectedFile = null;
+
+function setFile(file) {
+  if (!file) return;
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    dropzone.innerHTML = "";
+    const chip = document.createElement("div");
+    chip.className = "file-chip";
+    chip.style.width = "100%";
+    chip.innerHTML = `
+      <img src="${e.target.result}" alt="">
+      <div>
+        <div class="fc-name">${file.name}</div>
+        <div class="fc-size">${(file.size / 1024).toFixed(0)} KB</div>
+      </div>
+      <span class="fc-remove" role="button" tabindex="0">&times;</span>`;
+    dropzone.replaceWith(chip);
+    chip.querySelector(".fc-remove").addEventListener("click", (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      resetDropzone(chip);
+    });
+    uploadGenerate.disabled = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+function resetDropzone(currentEl) {
+  selectedFile = null;
+  uploadGenerate.disabled = true;
+  const dz = document.createElement("label");
+  dz.className = "dropzone";
+  dz.id = "dropzone";
+  dz.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span class="dz-title">Drop a screenshot, or click to browse</span>
+    <span class="dz-sub">PNG, JPG, or WebP — up to 20MB</span>
+    <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp">`;
+  currentEl.replaceWith(dz);
+  wireDropzone(dz);
+}
+
+function wireDropzone(dz) {
+  const input = dz.querySelector("input[type=file]");
+  input.addEventListener("change", () => { if (input.files[0]) setFile(input.files[0]); });
+  dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("drag"); });
+  dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
+  dz.addEventListener("drop", e => {
+    e.preventDefault(); dz.classList.remove("drag");
+    if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+}
+wireDropzone(dropzone);
+
+uploadGenerate.addEventListener("click", async () => {
+  if (!selectedFile) return;
+  await gatedGenerate({
+    sourceType: "upload",
+    sourceLabel: selectedFile.name,
+    onAllowed: () => runGeneration(() =>
+      generateFromImage({ file: selectedFile, format: currentFormat(), session: getState().session, onStatus: setResultStatus })
+    ),
+  });
+});
+
+/* ---------------- link / crawl flow ---------------- */
+const linkInput = document.getElementById("linkInput");
+const scanBtn = document.getElementById("scanBtn");
+const scanStatus = document.getElementById("scanStatus");
+const pageList = document.getElementById("pageList");
+const linkFooter = document.getElementById("linkFooter");
+const linkGenerate = document.getElementById("linkGenerate");
+const linkHint = document.getElementById("linkHint");
+
+function normalizeUrl(v) {
+  v = v.trim();
+  if (!v) return null;
+  if (!/^https?:\/\//i.test(v)) v = "https://" + v;
+  try { return new URL(v); } catch { return null; }
+}
+
+function fakeCrawl(base) {
+  const host = base.hostname.replace(/^www\./, "");
+  const stem = base.pathname === "/" ? "" : base.pathname.replace(/\/$/, "");
+  return [
+    { path: stem || "/", title: "Home" },
+    { path: (stem || "") + "/about", title: "About" },
+    { path: (stem || "") + "/pricing", title: "Pricing" },
+    { path: (stem || "") + "/blog", title: "Blog" },
+  ].map(p => ({ url: `${base.protocol}//${host}${p.path}`, title: p.title }));
+}
+
+function updateLinkGenerateState() {
+  const anyChecked = pageList.querySelectorAll("input[type=checkbox]:checked").length > 0;
+  linkGenerate.disabled = !anyChecked;
+  const n = pageList.querySelectorAll("input[type=checkbox]:checked").length;
+  linkHint.textContent = n > 0 ? `${n} page${n > 1 ? "s" : ""} selected.` : "Select the pages you want.";
+}
+
+scanBtn.addEventListener("click", () => {
+  const url = normalizeUrl(linkInput.value);
+  if (!url) {
+    scanStatus.textContent = "Enter a valid URL to scan.";
+    return;
+  }
+  scanStatus.textContent = `Scanning ${url.hostname}…`;
+  pageList.innerHTML = "";
+  linkFooter.style.display = "none";
+  scanBtn.disabled = true;
+
+  setTimeout(() => {
+    const pages = fakeCrawl(url);
+    scanStatus.textContent = `Found ${pages.length} pages on ${url.hostname}.`;
+    pages.forEach((p, i) => {
+      const item = document.createElement("label");
+      item.className = "page-item";
+      item.innerHTML = `
+        <input type="checkbox" ${i === 0 ? "checked" : ""}>
+        <div>
+          <div class="pi-url">${p.url}</div>
+          <div class="pi-title">${p.title}</div>
+        </div>`;
+      item.querySelector("input").addEventListener("change", updateLinkGenerateState);
+      pageList.appendChild(item);
+    });
+    linkFooter.style.display = "flex";
+    updateLinkGenerateState();
+    scanBtn.disabled = false;
+  }, 900);
+});
+
+linkGenerate.addEventListener("click", async () => {
+  const checked = [...pageList.querySelectorAll("input[type=checkbox]:checked")]
+    .map(cb => cb.closest(".page-item").querySelector(".pi-url").textContent);
+  if (!checked.length) return;
+  await gatedGenerate({
+    sourceType: "link",
+    sourceLabel: checked[0],
+    onAllowed: () => runGeneration(async () => {
+      setResultStatus("Fetching page…");
+      const sourceHtml = await fetchPageHtml(checked[0]);
+      return generateFromMarkup({
+        sourceHtml,
+        sourceLabel: checked[0],
+        format: currentFormat(),
+        session: getState().session,
+        onStatus: setResultStatus,
+      });
+    }),
+  });
+});
+
+/**
+ * Fetches a page's raw HTML for link mode. Many sites block cross-origin
+ * fetches from the browser (CORS), so this routes through the server's own
+ * fetch (same host as /api/generate) rather than trying window.fetch(url)
+ * directly against arbitrary third-party sites.
+ */
+async function fetchPageHtml(url) {
+  const { session } = getState();
+  const res = await fetch(`${API_BASE}/api/fetch-page?url=${encodeURIComponent(url)}`, {
+    headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Couldn't fetch that page.");
+  }
+  const { html } = await res.json();
+  return html;
+}
+
+/* ---------------- result modal ---------------- */
+const resultOverlay = document.getElementById("resultOverlay");
+const resultTitle = document.getElementById("resultTitle");
+const resultStatus = document.getElementById("resultStatus");
+const resultCode = document.getElementById("resultCode");
+const resultClose = document.getElementById("resultClose");
+const resultCopy = document.getElementById("resultCopy");
+const resultDownload = document.getElementById("resultDownload");
+
+function showResult(title, code) {
+  resultTitle.textContent = title;
+  resultCode.textContent = code;
+  resultStatus.style.display = "none";
+  resultOverlay.classList.add("open");
+}
+
+function setResultStatus(text) {
+  resultStatus.textContent = text;
+  resultStatus.style.display = text ? "block" : "none";
+}
+
+/**
+ * Opens the modal in a loading state, runs the given async generator
+ * function (returns { code, format }), and fills the modal in once done —
+ * or shows the error inline if it fails.
+ */
+async function runGeneration(generatorFn) {
+  resultTitle.textContent = "Generating…";
+  resultCode.textContent = "";
+  resultCopy.disabled = true;
+  resultDownload.disabled = true;
+  setResultStatus("Starting…");
+  resultOverlay.classList.add("open");
+
+  try {
+    const result = await generatorFn();
+    resultTitle.textContent = "Generated code";
+    resultCode.textContent = result.code;
+    resultDownload.dataset.ext = result.format === "react" ? "jsx" : "html";
+    setResultStatus("");
+  } catch (err) {
+    resultTitle.textContent = "Generation failed";
+    setResultStatus("");
+    if (err?.code === "QUOTA_EXCEEDED") {
+      resultOverlay.classList.remove("open");
+      openApiModal();
+      return;
+    }
+    resultCode.textContent = err?.message || "Something went wrong — please try again in a moment.";
+  } finally {
+    resultCopy.disabled = false;
+    resultDownload.disabled = false;
+  }
+}
+
+resultClose.addEventListener("click", () => resultOverlay.classList.remove("open"));
+resultOverlay.addEventListener("click", e => { if (e.target === resultOverlay) resultOverlay.classList.remove("open"); });
+
+resultCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(resultCode.textContent);
+    resultCopy.textContent = "Copied!";
+    setTimeout(() => (resultCopy.textContent = "Copy code"), 1400);
+  } catch {}
+});
+
+resultDownload.addEventListener("click", () => {
+  const ext = resultDownload.dataset.ext || "html";
+  const mime = ext === "jsx" ? "text/plain" : "text/html";
+  const blob = new Blob([resultCode.textContent], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `webnail-export.${ext}`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+/* ================= AUTH + BILLING WIRING ================= */
+import {
+  getState,
+  onAuthStateChange,
+  signUp,
+  signIn,
+  signInWithGoogle,
+  signOut,
+  recordGeneration,
+  startUpgradeCheckout,
+  ensureApiKey,
+} from "./js/auth.js";
+import { generateFromImage, generateFromMarkup, API_BASE } from "./js/generate.js";
+
+const getStartedBtn = document.getElementById("getStartedBtn");
+const usageChip = document.getElementById("usageChip");
+const usageChipText = document.getElementById("usageChipText");
+const accountBtn = document.getElementById("accountBtn");
+const accountAvatar = document.getElementById("accountAvatar");
+const accountEmail = document.getElementById("accountEmail");
+const accountDropdown = document.getElementById("accountDropdown");
+const ddEmail = document.getElementById("ddEmail");
+const ddPlan = document.getElementById("ddPlan");
+const ddApiBtn = document.getElementById("ddApiBtn");
+const ddSignOutBtn = document.getElementById("ddSignOutBtn");
+
+const authOverlay = document.getElementById("authOverlay");
+const authClose = document.getElementById("authClose");
+const authTitle = document.getElementById("authTitle");
+const authSub = document.getElementById("authSub");
+const authForm = document.getElementById("authForm");
+const authEmail = document.getElementById("authEmail");
+const authPassword = document.getElementById("authPassword");
+const authSubmit = document.getElementById("authSubmit");
+const authStatus = document.getElementById("authStatus");
+const authSwitchBtn = document.getElementById("authSwitchBtn");
+const authSwitchWrap = document.getElementById("authSwitchWrap");
+const googleBtn = document.getElementById("googleBtn");
+
+const apiOverlay = document.getElementById("apiOverlay");
+const apiClose = document.getElementById("apiClose");
+const apiSub = document.getElementById("apiSub");
+const upgradeBtn = document.getElementById("upgradeBtn");
+const apiKeyBox = document.getElementById("apiKeyBox");
+const apiKeyText = document.getElementById("apiKeyText");
+const apiKeyCopy = document.getElementById("apiKeyCopy");
+const apiStatus = document.getElementById("apiStatus");
+
+let authMode = "signin"; // 'signin' | 'signup'
+
+function openAuthModal() {
+  authStatus.textContent = "";
+  authStatus.className = "am-status";
+  authOverlay.classList.add("open");
+  authEmail.focus();
+}
+function closeAuthModal() { authOverlay.classList.remove("open"); }
+
+authClose.addEventListener("click", closeAuthModal);
+authOverlay.addEventListener("click", (e) => { if (e.target === authOverlay) closeAuthModal(); });
+
+authSwitchBtn.addEventListener("click", () => {
+  authMode = authMode === "signin" ? "signup" : "signin";
+  if (authMode === "signup") {
+    authTitle.textContent = "Create your account";
+    authSub.textContent = "10 free generations, no card required.";
+    authSubmit.textContent = "Sign up";
+    authSwitchWrap.innerHTML = 'Already have an account? <button type="button" id="authSwitchBtn2">Sign in</button>';
+    document.getElementById("authSwitchBtn2").addEventListener("click", () => { authMode = "signin"; authSwitchBtn.click(); });
+  } else {
+    authTitle.textContent = "Sign in to WebNail";
+    authSub.textContent = "10 free generations, no card required.";
+    authSubmit.textContent = "Sign in";
+    authSwitchWrap.innerHTML = 'Don\'t have an account? <button type="button" id="authSwitchBtn">Sign up</button>';
+    document.getElementById("authSwitchBtn").addEventListener("click", () => authSwitchBtn.dispatchEvent(new Event("click")));
+  }
+});
+// re-bind after innerHTML swap on first load
+authSwitchWrap.addEventListener("click", (e) => {
+  if (e.target.id === "authSwitchBtn2" || e.target.id === "authSwitchBtn") return; // handled above
+});
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authStatus.textContent = "";
+  authStatus.className = "am-status";
+  authSubmit.disabled = true;
+  const prevLabel = authSubmit.textContent;
+  authSubmit.textContent = authMode === "signup" ? "Creating account…" : "Signing in…";
+  try {
+    if (authMode === "signup") {
+      await signUp(authEmail.value.trim(), authPassword.value);
+      authStatus.textContent = "Check your inbox to confirm your email, then sign in.";
+      authStatus.className = "am-status ok";
+    } else {
+      await signIn(authEmail.value.trim(), authPassword.value);
+      closeAuthModal();
+    }
+  } catch (err) {
+    authStatus.textContent = err.message || "Something went wrong.";
+    authStatus.className = "am-status error";
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.textContent = prevLabel;
+  }
+});
+
+googleBtn.addEventListener("click", async () => {
+  try {
+    await signInWithGoogle();
+  } catch (err) {
+    authStatus.textContent = err.message || "Google sign-in failed.";
+    authStatus.className = "am-status error";
+  }
+});
+
+getStartedBtn.addEventListener("click", openAuthModal);
+
+accountBtn.addEventListener("click", () => accountDropdown.classList.toggle("open"));
+document.addEventListener("click", (e) => {
+  if (!accountBtn.contains(e.target) && !accountDropdown.contains(e.target)) {
+    accountDropdown.classList.remove("open");
+  }
+});
+
+ddSignOutBtn.addEventListener("click", async () => {
+  await signOut();
+  accountDropdown.classList.remove("open");
+});
+
+function openApiModal() {
+  apiStatus.textContent = "";
+  apiOverlay.classList.add("open");
+  accountDropdown.classList.remove("open");
+}
+function closeApiModal() { apiOverlay.classList.remove("open"); }
+apiClose.addEventListener("click", closeApiModal);
+apiOverlay.addEventListener("click", (e) => { if (e.target === apiOverlay) closeApiModal(); });
+ddApiBtn.addEventListener("click", openApiModal);
+
+upgradeBtn.addEventListener("click", async () => {
+  apiStatus.textContent = "";
+  apiStatus.className = "am-status";
+  upgradeBtn.disabled = true;
+  upgradeBtn.textContent = "Redirecting to checkout…";
+  try {
+    await startUpgradeCheckout();
+    // browser is redirected by startUpgradeCheckout(); this line rarely runs
+  } catch (err) {
+    apiStatus.textContent = err.message || "Couldn't start checkout.";
+    apiStatus.className = "am-status error";
+    upgradeBtn.disabled = false;
+    upgradeBtn.textContent = "Upgrade — $5.99/mo";
+  }
+});
+
+apiKeyCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(apiKeyText.textContent);
+    apiKeyCopy.textContent = "Copied!";
+    setTimeout(() => (apiKeyCopy.textContent = "Copy"), 1200);
+  } catch {}
+});
+
+async function revealApiKeyIfUnlimited(profile) {
+  if (!profile?.is_unlimited) return;
+  try {
+    const key = profile.api_key || (await ensureApiKey());
+    apiKeyText.textContent = key;
+    apiKeyBox.classList.add("show");
+    upgradeBtn.style.display = "none";
+    apiSub.textContent = "You're on the unlimited plan. Here's your API key:";
+  } catch (err) {
+    console.error("Could not issue API key:", err);
+  }
+}
+
+/**
+ * Runs before any "Generate code" click. If signed out → opens the auth
+ * modal. If signed in → burns one free generation (or passes through if
+ * unlimited) via the record_generation RPC; if the free quota is spent,
+ * opens the upgrade modal instead of generating.
+ */
+async function gatedGenerate({ sourceType, sourceLabel, onAllowed }) {
+  const { session } = getState();
+  if (!session) {
+    openAuthModal();
+    return;
+  }
+  const result = await recordGeneration({ sourceType, sourceLabel });
+  if (result.allowed) {
+    onAllowed();
+    return;
+  }
+  if (result.reason === "quota_exceeded") {
+    openApiModal();
+  } else if (result.reason === "signed_out") {
+    openAuthModal();
+  } else {
+    showResult("Something went wrong", "Couldn't reach the server just now — please try again in a moment.");
+  }
+}
+
+/* Reflect auth/profile state across the header + modals whenever it changes. */
+onAuthStateChange((state) => {
+  const { session, profile, loading } = state;
+
+  if (loading) return;
+
+  if (!session) {
+    getStartedBtn.style.display = "";
+    usageChip.style.display = "none";
+    accountBtn.style.display = "none";
+    accountDropdown.classList.remove("open");
+    return;
+  }
+
+  getStartedBtn.style.display = "none";
+  accountBtn.style.display = "flex";
+
+  const email = session.user.email || "";
+  accountEmail.textContent = email;
+  accountAvatar.textContent = email.charAt(0).toUpperCase();
+  ddEmail.textContent = email;
+
+  if (profile?.is_unlimited) {
+    usageChip.style.display = "none";
+    ddPlan.textContent = "Unlimited plan";
+  } else if (profile) {
+    const remaining = Math.max(0, profile.free_generations_limit - profile.free_generations_used);
+    usageChip.style.display = "flex";
+    usageChip.classList.remove("unlimited");
+    usageChipText.textContent = `${remaining} free left`;
+    ddPlan.textContent = `Free plan · ${remaining} of ${profile.free_generations_limit} left`;
+  }
+
+  revealApiKeyIfUnlimited(profile);
+});
+
+/* Handle the ?checkout=success / canceled redirect back from Stripe. */
+(() => {
+  const params = new URLSearchParams(window.location.search);
+  const checkout = params.get("checkout");
+  if (checkout === "success") {
+    showResult("You're upgraded!", "Your account is now unlimited. Open \"API & billing\" from your account menu to grab your API key.");
+  } else if (checkout === "canceled") {
+    // no-op — user backed out of Stripe Checkout
+  }
+  if (checkout) {
+    params.delete("checkout");
+    const rest = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : ""));
+  }
+})();
+</script>
+</body>
+</html>
